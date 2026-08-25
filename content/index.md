@@ -1,24 +1,26 @@
-# Welcome to Nuxt Content Starter
+---
+title: MYBB
+description: 技術筆記、開發紀錄與創作
+---
 
-This is the main page displaying Markdown located at [content/index.md](https://github.com/nuxt/starter/blob/content/content/index.md).
+# MYBB
 
-Move to [about](/about) page.
+技術筆記、開發紀錄與創作。
 
-## Manage your Contents
+這個網站主要記錄我的軟體開發學習、實務經驗，以及自己的小說創作。
 
-Create new pages or modify the existing ones in `content/` directory.
+## 技術紀錄
 
-## Query & Render Pages
+整理軟體開發、Java、Spring Boot、Vue、Nuxt、DevOps、AI 與資安相關的技術紀錄。
 
-You can find an example of querying contents and rendering them in a [catch-all page](https://github.com/nuxt/starter/blob/content/app/pages/%5B...slug%5D.vue)
+[查看技術紀錄](/tech)
 
-## Integrate Vue Component
+## 小說作品
 
-::alert{color="green"}
-The current [alert](https://github.com/nuxt/starter/blob/content/app/components/Alert.vue) and the [counter](https://github.com/nuxt/starter/blob/content/app/components/Counter.vue) below are `Vue` components integrated into the Markdown.
-::
+這裡收錄我創作的小說與章節。
 
-::counter
-::
+[查看小說作品](/novels)
 
-Checkout out the [documentation](https://content.nuxt.com/docs/getting-started) to learn more.
+## 關於這個網站
+
+這是一個持續建設中的個人技術與創作網站。
