@@ -34,3 +34,27 @@ date: 發布日期：2026-08-25
 - Vercel
 
 網站已經成功部署到公開網路。
+
+## 程式碼範例
+
+例如使用 Spring Boot 建立一個簡單的 API：
+
+```java
+@RestController
+@RequestMapping("/api")
+public class HelloController {
+
+    @GetMapping("/hello")
+    public String hello() {
+        return "Hello World";
+    }
+}
+```
+
+啟動專案：
+
+```bash
+npm run dev
+```
+
+也可以在 Vue 裡使用 `ref()` 建立響應式資料。
