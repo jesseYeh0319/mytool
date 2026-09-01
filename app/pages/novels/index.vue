@@ -1,4 +1,21 @@
 <script setup lang="ts">
+
+useSeoMeta({
+  title: '小說作品 | MYBB',
+
+  description:
+      'MYBB 的小說創作與作品列表。',
+
+  ogTitle: '小說作品 | MYBB',
+
+  ogDescription:
+      'MYBB 的小說創作與作品列表。',
+
+  ogType: 'website',
+
+  twitterCard: 'summary_large_image'
+})
+
 const { data: books } = await useAsyncData('novel-books', () => {
   return queryCollection('novelBooks')
       .all()

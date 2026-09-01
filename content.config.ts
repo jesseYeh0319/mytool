@@ -10,10 +10,17 @@ export default defineContentConfig({
     tech: defineCollection({
       type: 'page',
       source: 'tech/**',
+
       schema: z.object({
         title: z.string(),
         description: z.string(),
         date: z.string(),
+
+        category: z.string(),
+
+        tags: z.array(
+            z.string()
+        ).default([]),
       }),
     }),
 

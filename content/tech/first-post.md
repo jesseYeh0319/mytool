@@ -1,7 +1,12 @@
 ---
-title: 文章：我的第一篇技術紀錄
-description: 說明：記錄這個網站從零開始建立的過程
-date: 發布日期：2026-08-25
+title: 我的第一篇技術紀錄
+description: 記錄這個網站從零開始建立的過程
+date: 2026-08-25
+category: Web Development
+tags:
+  - Nuxt
+  - Vue
+  - Nuxt Content
 ---
 
 # 我的第一篇技術紀錄

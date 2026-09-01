@@ -1,4 +1,21 @@
 <script setup lang="ts">
+
+useSeoMeta({
+  title: 'MYBB｜技術紀錄與小說創作',
+
+  description:
+      '記錄軟體開發實務、Java、Spring Boot、Vue、Nuxt、DevOps、AI，以及小說創作。',
+
+  ogTitle: 'MYBB｜技術紀錄與小說創作',
+
+  ogDescription:
+      '記錄軟體開發實務、Java、Spring Boot、Vue、Nuxt、DevOps、AI，以及小說創作。',
+
+  ogType: 'website',
+
+  twitterCard: 'summary_large_image'
+})
+
 const { data: latestArticles } = await useAsyncData('latest-tech-articles', () => {
   return queryCollection('tech')
       .order('date', 'DESC')
