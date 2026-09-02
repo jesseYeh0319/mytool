@@ -24,8 +24,7 @@ if (!article.value) {
 }
 
 /* =========================
-   All Articles
-   用來取得上一篇 / 下一篇
+   Article Navigation
 ========================= */
 
 const { data: allArticles } = await useAsyncData(
@@ -46,19 +45,6 @@ const currentArticleIndex = computed(() => {
       item => item.path === article.value?.path
   )
 })
-
-/*
- * 文章依日期 DESC 排列：
- *
- * index 0 = 最新
- * index 1 = 第二新
- * index 2 = 第三新
- *
- * 所以：
- *
- * previousArticle = 比目前更新的文章
- * nextArticle     = 比目前更舊的文章
- */
 
 const previousArticle = computed(() => {
   if (!allArticles.value) {
@@ -112,10 +98,11 @@ useSeoMeta({
 })
 
 /* =========================
-   TOC Active Section
+   TOC
 ========================= */
 
 const activeHeadingId = ref('')
+const mobileTocOpen = ref(false)
 
 let headings: HTMLElement[] = []
 
@@ -169,6 +156,38 @@ function setupHeadingTracking() {
   )
 }
 
+const activeHeadingText = computed(() => {
+  const links = article.value?.body?.toc?.links
+
+  if (!links?.length) {
+    return ''
+  }
+
+  for (const link of links) {
+    if (link.id === activeHeadingId.value) {
+      return link.text
+    }
+
+    const child = link.children?.find(
+        item => item.id === activeHeadingId.value
+    )
+
+    if (child) {
+      return child.text
+    }
+  }
+
+  return links[0]?.text ?? ''
+})
+
+function isActiveHeading(id: string) {
+  return activeHeadingId.value === id
+}
+
+function closeMobileToc() {
+  mobileTocOpen.value = false
+}
+
 onMounted(async () => {
   await nextTick()
 
@@ -182,9 +201,26 @@ onBeforeUnmount(() => {
   )
 })
 
-function isActiveHeading(id: string) {
-  return activeHeadingId.value === id
-}
+/* =========================
+   Route Change
+========================= */
+
+watch(
+    () => route.fullPath,
+    async () => {
+      mobileTocOpen.value = false
+
+      await nextTick()
+
+      headings = Array.from(
+          document.querySelectorAll<HTMLElement>(
+              '.article-content h2[id], .article-content h3[id]'
+          )
+      )
+
+      updateActiveHeading()
+    }
+)
 </script>
 
 <template>
@@ -192,9 +228,7 @@ function isActiveHeading(id: string) {
       v-if="article"
       class="article-page"
   >
-    <!-- =========================
-         Header
-    ========================== -->
+    <!-- Header -->
 
     <header class="article-header">
       <NuxtLink
@@ -237,54 +271,79 @@ function isActiveHeading(id: string) {
     </header>
 
     <!-- =========================
-         Mobile TOC
+         Mobile Sticky TOC
     ========================== -->
 
-    <nav
+    <div
         v-if="article.body?.toc?.links?.length"
         class="mobile-toc"
-        aria-label="本文目錄"
     >
-      <p class="toc-title">
-        本文目錄
-      </p>
+      <button
+          type="button"
+          class="mobile-toc-button"
+          :aria-expanded="mobileTocOpen"
+          @click="mobileTocOpen = !mobileTocOpen"
+      >
+        <span class="mobile-toc-label">
+          本文目錄
+        </span>
 
-      <ul class="toc-list">
-        <li
-            v-for="link in article.body.toc.links"
-            :key="link.id"
-            class="toc-item"
+        <span class="mobile-current-heading">
+          {{ activeHeadingText }}
+        </span>
+
+        <span
+            class="mobile-toc-arrow"
+            :class="{ open: mobileTocOpen }"
         >
-          <a
-              :href="`#${link.id}`"
-              :class="{
-              active: isActiveHeading(link.id)
-            }"
-          >
-            {{ link.text }}
-          </a>
+          ⌄
+        </span>
+      </button>
 
-          <ul
-              v-if="link.children?.length"
-              class="toc-children"
+      <nav
+          v-if="mobileTocOpen"
+          class="mobile-toc-panel"
+          aria-label="本文目錄"
+      >
+        <ul class="toc-list">
+          <li
+              v-for="link in article.body.toc.links"
+              :key="link.id"
+              class="toc-item"
           >
-            <li
-                v-for="child in link.children"
-                :key="child.id"
+            <a
+                :href="`#${link.id}`"
+                :class="{
+                active: isActiveHeading(link.id)
+              }"
+                @click="closeMobileToc"
             >
-              <a
-                  :href="`#${child.id}`"
-                  :class="{
-                  active: isActiveHeading(child.id)
-                }"
+              {{ link.text }}
+            </a>
+
+            <ul
+                v-if="link.children?.length"
+                class="toc-children"
+            >
+              <li
+                  v-for="child in link.children"
+                  :key="child.id"
               >
-                {{ child.text }}
-              </a>
-            </li>
-          </ul>
-        </li>
-      </ul>
-    </nav>
+                <a
+                    :href="`#${child.id}`"
+                    :class="{
+                    active: isActiveHeading(child.id)
+                  }"
+                    @click="closeMobileToc"
+                >
+                  {{ child.text }}
+                </a>
+              </li>
+            </ul>
+          </li>
+        </ul>
+      </nav>
+    </div>
 
     <!-- =========================
          Article Layout
@@ -396,9 +455,7 @@ function isActiveHeading(id: string) {
       />
     </nav>
 
-    <!-- =========================
-         Footer
-    ========================== -->
+    <!-- Footer -->
 
     <footer class="article-footer">
       <NuxtLink
@@ -501,7 +558,7 @@ function isActiveHeading(id: string) {
 }
 
 /* =========================
-   TOC
+   TOC Shared
 ========================= */
 
 .toc-title {
@@ -559,9 +616,9 @@ function isActiveHeading(id: string) {
   color: #888;
 }
 
-/*
- * Sticky 必須放在 Grid Item
- */
+/* =========================
+   Desktop TOC
+========================= */
 
 .desktop-toc {
   position: sticky;
@@ -576,6 +633,10 @@ function isActiveHeading(id: string) {
   padding-left: 20px;
   border-left: 1px solid #e5e5e5;
 }
+
+/* =========================
+   Mobile TOC
+========================= */
 
 .mobile-toc {
   display: none;
@@ -602,7 +663,7 @@ function isActiveHeading(id: string) {
   font-size: 28px;
   line-height: 1.4;
   color: #222;
-  scroll-margin-top: 30px;
+  scroll-margin-top: 80px;
 }
 
 .article-content :deep(h3) {
@@ -610,7 +671,7 @@ function isActiveHeading(id: string) {
   font-size: 22px;
   line-height: 1.5;
   color: #333;
-  scroll-margin-top: 30px;
+  scroll-margin-top: 80px;
 }
 
 .article-content :deep(h2 a),
@@ -640,8 +701,6 @@ function isActiveHeading(id: string) {
   color: #666;
 }
 
-/* Inline code */
-
 .article-content :deep(:not(pre) > code) {
   padding: 3px 7px;
   border: 1px solid #e5e5e5;
@@ -656,8 +715,6 @@ function isActiveHeading(id: string) {
   font-size: 0.88em;
   color: #c7254e;
 }
-
-/* Code Block */
 
 .article-content :deep(pre) {
   overflow-x: auto;
@@ -799,7 +856,7 @@ function isActiveHeading(id: string) {
 }
 
 /* =========================
-   Tablet
+   Tablet / Mobile
 ========================= */
 
 @media (max-width: 900px) {
@@ -819,13 +876,71 @@ function isActiveHeading(id: string) {
     display: none;
   }
 
+  /*
+   * 手機 / 平板 Sticky TOC
+   */
+
   .mobile-toc {
+    position: sticky;
+    z-index: 20;
+    top: 0;
     display: block;
-    margin-top: 32px;
-    padding: 22px 24px;
-    border: 1px solid #e5e5e5;
+    margin-top: 24px;
+    border: 1px solid #e2e2e2;
     border-radius: 10px;
-    background: #fafafa;
+    background: rgb(255 255 255 / 96%);
+    box-shadow: 0 4px 14px rgb(0 0 0 / 6%);
+    backdrop-filter: blur(8px);
+  }
+
+  .mobile-toc-button {
+    display: grid;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 13px 15px;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .mobile-toc-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: #222;
+  }
+
+  .mobile-current-heading {
+    overflow: hidden;
+    font-size: 13px;
+    color: #777;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-toc-arrow {
+    display: inline-block;
+    font-size: 18px;
+    line-height: 1;
+    color: #666;
+    transition: transform 0.15s ease;
+  }
+
+  .mobile-toc-arrow.open {
+    transform: rotate(180deg);
+  }
+
+  .mobile-toc-panel {
+    max-height: 55vh;
+    overflow-y: auto;
+    padding: 6px 16px 16px;
+    border-top: 1px solid #eee;
   }
 
   .article-navigation {
@@ -837,13 +952,9 @@ function isActiveHeading(id: string) {
   }
 }
 
-/* =========================
-   Mobile
-========================= */
-
 @media (max-width: 768px) {
   .article-header {
-    padding: 24px 0 36px;
+    padding: 24px 0 30px;
   }
 
   .article-header h1 {
@@ -855,14 +966,24 @@ function isActiveHeading(id: string) {
   }
 
   .mobile-toc {
-    margin-top: 28px;
-    padding: 20px;
+    margin-top: 18px;
+    border-radius: 8px;
   }
 
   .article-content {
-    padding: 40px 0;
+    padding: 36px 0 40px;
     font-size: 16px;
     line-height: 1.85;
+  }
+
+  /*
+   * Sticky TOC 大約 50px 高，
+   * 點目錄時避免標題被它蓋住。
+   */
+
+  .article-content :deep(h2),
+  .article-content :deep(h3) {
+    scroll-margin-top: 70px;
   }
 
   .article-content :deep(h2) {
