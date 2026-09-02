@@ -1,21 +1,4 @@
 <script setup lang="ts">
-
-useSeoMeta({
-  title: '技術紀錄 | MYBB',
-
-  description:
-      'Java、Spring Boot、Vue、Nuxt、DevOps、AI 與資安相關的開發實作與技術紀錄。',
-
-  ogTitle: '技術紀錄 | MYBB',
-
-  ogDescription:
-      'Java、Spring Boot、Vue、Nuxt、DevOps、AI 與資安相關的開發實作與技術紀錄。',
-
-  ogType: 'website',
-
-  twitterCard: 'summary_large_image'
-})
-
 const { data: articles } = await useAsyncData(
     'tech-articles',
     () => {
@@ -25,10 +8,30 @@ const { data: articles } = await useAsyncData(
     }
 )
 
-// 目前選擇的分類
-const selectedCategory = ref('全部')
+/* =========================
+   SEO
+========================= */
 
-// 從所有文章自動產生分類
+useSeoMeta({
+  title: '技術紀錄 | MYBB',
+
+  description:
+      '記錄 Java、Spring Boot、Vue、Nuxt、DevOps 與軟體開發相關技術內容。',
+
+  ogTitle: '技術紀錄 | MYBB',
+
+  ogDescription:
+      '記錄 Java、Spring Boot、Vue、Nuxt、DevOps 與軟體開發相關技術內容。'
+})
+
+/* =========================
+   Filter
+========================= */
+
+const selectedCategory = ref('全部')
+const selectedTag = ref('')
+const searchKeyword = ref('')
+
 const categories = computed(() => {
   if (!articles.value) {
     return ['全部']
@@ -44,27 +47,77 @@ const categories = computed(() => {
   ]
 })
 
-// 根據分類篩選文章
 const filteredArticles = computed(() => {
   if (!articles.value) {
     return []
   }
 
-  if (selectedCategory.value === '全部') {
-    return articles.value
-  }
+  const keyword = searchKeyword.value
+      .trim()
+      .toLowerCase()
 
-  return articles.value.filter(
-      article =>
-          article.category === selectedCategory.value
-  )
+  return articles.value.filter(article => {
+    /* Category */
+
+    const categoryMatched =
+        selectedCategory.value === '全部'
+        || article.category === selectedCategory.value
+
+    if (!categoryMatched) {
+      return false
+    }
+
+    /* Tag */
+
+    const tagMatched =
+        !selectedTag.value
+        || article.tags?.includes(selectedTag.value)
+
+    if (!tagMatched) {
+      return false
+    }
+
+    /* Search */
+
+    if (!keyword) {
+      return true
+    }
+
+    const searchableText = [
+      article.title,
+      article.description,
+      article.category,
+      ...(article.tags ?? [])
+    ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+
+    return searchableText.includes(keyword)
+  })
 })
+
+function clearSearch() {
+  searchKeyword.value = ''
+}
+
+function selectTag(tag: string) {
+  selectedTag.value =
+      selectedTag.value === tag
+          ? ''
+          : tag
+}
+
+function clearAllFilters() {
+  selectedCategory.value = '全部'
+  selectedTag.value = ''
+  searchKeyword.value = ''
+}
 </script>
 
 <template>
   <section class="tech-page">
-    <!-- 頁面標題 -->
-    <div class="page-header">
+    <header class="page-header">
       <p class="page-label">
         TECH
       </p>
@@ -74,11 +127,37 @@ const filteredArticles = computed(() => {
       </h1>
 
       <p class="page-description">
-        記錄軟體開發、Java、Spring Boot、Vue、Nuxt、DevOps、AI 與資安相關的實作與研究。
+        記錄軟體開發、Java、Spring Boot、Vue、Nuxt、DevOps
+        與其他技術學習內容。
       </p>
+    </header>
+
+    <!-- Search -->
+
+    <div class="search-area">
+      <div class="search-box">
+        <input
+            v-model="searchKeyword"
+            class="search-input"
+            type="search"
+            placeholder="搜尋文章、技術或標籤..."
+            aria-label="搜尋技術文章"
+        >
+
+        <button
+            v-if="searchKeyword"
+            class="clear-button"
+            type="button"
+            aria-label="清除搜尋"
+            @click="clearSearch"
+        >
+          清除
+        </button>
+      </div>
     </div>
 
     <!-- Category -->
+
     <div class="category-filter">
       <button
           v-for="category in categories"
@@ -94,299 +173,455 @@ const filteredArticles = computed(() => {
       </button>
     </div>
 
-    <!-- 文章數量 -->
-    <div class="article-count">
-      共 {{ filteredArticles.length }} 篇文章
+    <!-- Result Info -->
+
+    <div class="result-info">
+      <span>
+        共 {{ filteredArticles.length }} 篇文章
+      </span>
+
+      <span
+          v-if="searchKeyword"
+          class="filter-info"
+      >
+        搜尋「{{ searchKeyword }}」
+      </span>
+
+      <span
+          v-if="selectedTag"
+          class="selected-tag"
+      >
+        #{{ selectedTag }}
+
+        <button
+            type="button"
+            class="remove-tag"
+            aria-label="取消標籤篩選"
+            @click="selectedTag = ''"
+        >
+          ×
+        </button>
+      </span>
+
+      <button
+          v-if="
+          searchKeyword
+          || selectedTag
+          || selectedCategory !== '全部'
+        "
+          type="button"
+          class="clear-all-button"
+          @click="clearAllFilters"
+      >
+        清除全部篩選
+      </button>
     </div>
 
-    <!-- 文章列表 -->
-    <div class="article-list">
+    <!-- Articles -->
+
+    <div
+        v-if="filteredArticles.length"
+        class="article-list"
+    >
       <article
           v-for="article in filteredArticles"
           :key="article.path"
           class="article-card"
       >
-        <!-- 日期 + Category -->
         <div class="article-meta">
           <span class="article-date">
             {{ article.date }}
           </span>
 
-          <span class="article-category">
+          <span
+              v-if="article.category"
+              class="article-category"
+          >
             {{ article.category }}
           </span>
         </div>
 
-        <!-- 標題 -->
-        <h2>
-          <NuxtLink :to="article.path">
+        <NuxtLink
+            :to="article.path"
+            class="article-title-link"
+        >
+          <h2 class="article-title">
             {{ article.title }}
-          </NuxtLink>
-        </h2>
+          </h2>
+        </NuxtLink>
 
-        <!-- 說明 -->
         <p class="article-description">
           {{ article.description }}
         </p>
 
-        <!-- Tags -->
         <div
             v-if="article.tags?.length"
             class="article-tags"
         >
-          <span
+          <button
               v-for="tag in article.tags"
               :key="tag"
+              type="button"
               class="tag"
+              :class="{
+              active: selectedTag === tag
+            }"
+              @click="selectTag(tag)"
           >
             #{{ tag }}
-          </span>
+          </button>
         </div>
 
-        <!-- 閱讀文章 -->
         <NuxtLink
-            class="read-more"
             :to="article.path"
+            class="read-link"
         >
           閱讀文章 →
         </NuxtLink>
       </article>
     </div>
 
-    <!-- 沒有文章 -->
+    <!-- Empty -->
+
     <div
-        v-if="filteredArticles.length === 0"
+        v-else
         class="empty-state"
     >
-      這個分類目前還沒有文章。
+      <p>
+        找不到符合條件的文章。
+      </p>
+
+      <button
+          type="button"
+          class="reset-button"
+          @click="clearAllFilters"
+      >
+        清除全部篩選
+      </button>
     </div>
   </section>
 </template>
 
 <style scoped>
 .tech-page {
-  padding-bottom: 80px;
+  max-width: 900px;
+  margin: 0 auto;
+  padding-bottom: 100px;
 }
 
-/* -------------------------
-   頁面標題
-------------------------- */
+/* =========================
+   Header
+========================= */
 
 .page-header {
-  padding: 40px 0 48px;
+  margin-bottom: 40px;
 }
 
 .page-label {
-  margin: 0 0 12px;
-
-  font-size: 14px;
+  margin: 0 0 10px;
+  font-size: 13px;
   font-weight: 700;
-
-  letter-spacing: 2px;
+  letter-spacing: 0.14em;
+  color: #777;
 }
 
 .page-header h1 {
   margin: 0;
-
   font-size: 42px;
-  line-height: 1.2;
+  line-height: 1.25;
+  color: #1f1f1f;
 }
 
 .page-description {
   max-width: 680px;
-
-  margin-top: 20px;
-
-  font-size: 18px;
+  margin: 18px 0 0;
+  font-size: 17px;
   line-height: 1.8;
-
-  color: #555;
+  color: #666;
 }
 
-/* -------------------------
-   Category Filter
-------------------------- */
+/* =========================
+   Search
+========================= */
+
+.search-area {
+  margin-bottom: 24px;
+}
+
+.search-box {
+  position: relative;
+  max-width: 620px;
+}
+
+.search-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 14px 80px 14px 16px;
+  border: 1px solid #d8d8d8;
+  border-radius: 10px;
+  outline: none;
+  background: white;
+  font: inherit;
+  font-size: 15px;
+  color: #222;
+  transition:
+      border-color 0.15s ease,
+      box-shadow 0.15s ease;
+}
+
+.search-input::placeholder {
+  color: #999;
+}
+
+.search-input:focus {
+  border-color: #888;
+  box-shadow: 0 0 0 3px rgb(0 0 0 / 5%);
+}
+
+.clear-button {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  padding: 5px 8px;
+  border: 0;
+  background: transparent;
+  color: #777;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.clear-button:hover {
+  color: #111;
+}
+
+/* =========================
+   Category
+========================= */
 
 .category-filter {
   display: flex;
   flex-wrap: wrap;
-
   gap: 10px;
-
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .category-button {
   padding: 8px 14px;
-
   border: 1px solid #ddd;
   border-radius: 999px;
-
   background: white;
-
+  font: inherit;
   font-size: 14px;
-  color: #444;
-
+  color: #555;
   cursor: pointer;
-
   transition:
       background 0.15s ease,
-      color 0.15s ease,
-      border-color 0.15s ease;
+      border-color 0.15s ease,
+      color 0.15s ease;
 }
 
 .category-button:hover {
   border-color: #aaa;
+  color: #111;
 }
 
 .category-button.active {
   border-color: #222;
-
   background: #222;
-
   color: white;
 }
 
-/* -------------------------
-   Article Count
-------------------------- */
+/* =========================
+   Result
+========================= */
 
-.article-count {
-  margin-bottom: 20px;
-
+.result-info {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 16px;
   font-size: 14px;
-
   color: #777;
 }
 
-/* -------------------------
-   Article List
-------------------------- */
+.filter-info {
+  color: #444;
+}
+
+.selected-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #f2f2f2;
+  color: #444;
+}
+
+.remove-tag {
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  font-size: 16px;
+  line-height: 1;
+  color: #777;
+  cursor: pointer;
+}
+
+.remove-tag:hover {
+  color: #111;
+}
+
+.clear-all-button {
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  color: #777;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.clear-all-button:hover {
+  color: #111;
+}
+
+/* =========================
+   Articles
+========================= */
 
 .article-list {
-  display: grid;
-
-  gap: 20px;
+  border-top: 1px solid #e5e5e5;
 }
 
 .article-card {
-  padding: 28px;
-
-  border: 1px solid #e5e5e5;
-  border-radius: 12px;
+  padding: 32px 0;
+  border-bottom: 1px solid #e5e5e5;
 }
-
-/* 日期 + Category */
 
 .article-meta {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-
   gap: 10px;
-
   margin-bottom: 10px;
-
-  font-size: 14px;
-
-  color: #777;
+  font-size: 13px;
+  color: #888;
 }
 
 .article-category {
   padding: 4px 9px;
-
   border-radius: 999px;
-
   background: #f2f2f2;
-
-  color: #444;
-}
-
-/* 標題 */
-
-.article-card h2 {
-  margin: 10px 0;
-
-  font-size: 24px;
-}
-
-.article-card h2 a {
-  color: #222;
-
-  text-decoration: none;
-}
-
-.article-card h2 a:hover {
-  text-decoration: underline;
-}
-
-/* Description */
-
-.article-description {
-  margin: 0 0 16px;
-
-  line-height: 1.8;
-
   color: #555;
 }
 
-/* Tags */
+.article-title-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.article-title {
+  margin: 0;
+  font-size: 26px;
+  line-height: 1.4;
+  color: #222;
+}
+
+.article-title-link:hover .article-title {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+
+.article-description {
+  margin: 12px 0 0;
+  font-size: 15px;
+  line-height: 1.8;
+  color: #666;
+}
 
 .article-tags {
   display: flex;
   flex-wrap: wrap;
-
   gap: 8px;
-
-  margin-bottom: 20px;
+  margin-top: 14px;
 }
 
 .tag {
-  padding: 4px 9px;
-
-  border: 1px solid #e5e5e5;
+  padding: 5px 9px;
+  border: 1px solid #e6e6e6;
   border-radius: 999px;
-
-  font-size: 13px;
-
-  color: #666;
-
   background: #fafafa;
+  font: inherit;
+  font-size: 12px;
+  color: #666;
+  cursor: pointer;
+  transition:
+      background 0.15s ease,
+      border-color 0.15s ease,
+      color 0.15s ease;
 }
 
-/* 閱讀文章 */
-
-.read-more {
-  font-weight: 600;
-
+.tag:hover {
+  border-color: #aaa;
   color: #222;
+}
 
+.tag.active {
+  border-color: #222;
+  background: #222;
+  color: white;
+}
+
+.read-link {
+  display: inline-block;
+  margin-top: 20px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #222;
   text-decoration: none;
 }
 
-.read-more:hover {
+.read-link:hover {
   text-decoration: underline;
 }
 
-/* -------------------------
-   Empty State
-------------------------- */
+/* =========================
+   Empty
+========================= */
 
 .empty-state {
-  padding: 48px 20px;
-
+  padding: 60px 20px;
+  border-top: 1px solid #e5e5e5;
   text-align: center;
-
   color: #777;
 }
 
-/* -------------------------
-   手機
-------------------------- */
+.reset-button {
+  margin-top: 10px;
+  padding: 8px 14px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: white;
+  font: inherit;
+  color: #444;
+  cursor: pointer;
+}
+
+.reset-button:hover {
+  background: #f5f5f5;
+}
+
+/* =========================
+   Mobile
+========================= */
 
 @media (max-width: 768px) {
   .page-header {
-    padding: 24px 0 36px;
+    margin-bottom: 32px;
   }
 
   .page-header h1 {
@@ -397,22 +632,16 @@ const filteredArticles = computed(() => {
     font-size: 16px;
   }
 
-  .category-filter {
-    gap: 8px;
-  }
-
-  .category-button {
-    padding: 7px 12px;
-
-    font-size: 13px;
+  .search-box {
+    max-width: none;
   }
 
   .article-card {
-    padding: 20px;
+    padding: 26px 0;
   }
 
-  .article-card h2 {
-    font-size: 21px;
+  .article-title {
+    font-size: 23px;
   }
 }
 </style>
