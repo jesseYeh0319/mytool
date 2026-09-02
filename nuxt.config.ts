@@ -1,5 +1,20 @@
 export default defineNuxtConfig({
-  modules: ['@nuxt/content'],
+  modules: [
+    '@nuxt/content',
+    '@nuxtjs/sitemap',
+    '@nuxtjs/robots',
+  ],
+
+  site: {
+    url: 'https://mytool-mybb.vercel.app',
+    name: 'MYBB',
+  },
+
+  sitemap: {
+    sources: [
+      '/api/__sitemap__/urls',
+    ],
+  },
 
   content: {
     experimental: {
