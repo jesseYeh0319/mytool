@@ -87,6 +87,17 @@ const canonicalUrl = computed(() => {
   return `${siteUrl}${article.value?.path ?? route.path}`
 })
 
+const articleImageUrl = computed(() => {
+  if (!article.value?.image) {
+    return undefined
+  }
+
+  return new URL(
+      article.value.image,
+      siteUrl
+  ).toString()
+})
+
 useSeoMeta({
   title: () =>
       `${article.value?.title ?? '技術文章'} | MYBB`,
@@ -104,6 +115,9 @@ useSeoMeta({
 
   ogUrl: () =>
       canonicalUrl.value,
+
+  ogImage: () =>
+      articleImageUrl.value,
 
   articlePublishedTime: () =>
       article.value?.date,
@@ -130,25 +144,40 @@ useHead(() => ({
       innerHTML: JSON.stringify({
         '@context': 'https://schema.org',
         '@type': 'Article',
+
         headline:
             article.value?.title ?? '技術文章',
+
         description:
             article.value?.description ?? 'MYBB 技術紀錄',
+
+        image:
+        articleImageUrl.value,
+
         datePublished:
         article.value?.date,
+
+        dateModified:
+            article.value?.updated ?? article.value?.date,
+
         author: {
           '@type': 'Person',
-          name: 'MYBB'
+          name: 'MYBB',
+          url: `${siteUrl}/about`
         },
+
         publisher: {
           '@type': 'Person',
           name: 'MYBB'
         },
+
         mainEntityOfPage: {
           '@type': 'WebPage',
           '@id': canonicalUrl.value
         },
-        url: canonicalUrl.value
+
+        url:
+        canonicalUrl.value
       })
     }
   ]
@@ -312,6 +341,13 @@ watch(
       <p class="article-description">
         {{ article.description }}
       </p>
+
+      <img
+          v-if="article.image"
+          :src="article.image"
+          :alt="`${article.title} 封面`"
+          class="article-cover"
+      >
 
       <div
           v-if="article.tags?.length"
@@ -583,6 +619,15 @@ watch(
   font-size: 18px;
   line-height: 1.8;
   color: #555;
+}
+
+.article-cover {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 28px;
+  border-radius: 12px;
+  object-fit: cover;
 }
 
 .article-tags {

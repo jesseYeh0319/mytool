@@ -1,12 +1,13 @@
 ---
 title: 使用 Spring Boot 建立 REST API
 description: 記錄使用 Spring Boot 建立一個基本 REST API 的方式。
-date: 2026-09-02
+date: 2026-09-02T20:00:00+08:00
 category: Java
 tags:
   - Java
   - Spring Boot
   - REST API
+image: /images/tech/spring-boot-rest-api.webp
 ---
 
 # 使用 Spring Boot 建立 REST API

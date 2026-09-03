@@ -14,13 +14,16 @@ export default defineContentConfig({
       schema: z.object({
         title: z.string(),
         description: z.string(),
+
         date: z.string(),
+
+        updated: z.string().optional(),
 
         category: z.string(),
 
-        tags: z.array(
-            z.string()
-        ).default([]),
+        tags: z.array(z.string()).default([]),
+
+        image: z.string().optional(),
       }),
     }),
 
