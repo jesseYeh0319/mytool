@@ -78,6 +78,67 @@ const nextArticle = computed(() => {
 })
 
 /* =========================
+   Related Articles
+========================= */
+
+/*
+ * 相關文章推薦規則：
+ * 1. 排除目前正在閱讀的文章。
+ * 2. 相同分類加 2 分，每個相同標籤加 1 分。
+ * 3. 只保留有相關分數的文章，並依分數由高到低排序。
+ * 4. 分數相同時優先顯示較新的文章，最後最多取 3 篇。
+ *
+ * 這裡沿用上一篇 / 下一篇已取得的 allArticles，
+ * 避免為相關文章再次查詢同一份內容資料。
+ */
+const relatedArticles = computed(() => {
+  if (!article.value || !allArticles.value) {
+    return []
+  }
+
+  const currentArticle = article.value
+  const currentTags = currentArticle.tags ?? []
+
+  return allArticles.value
+      .filter(item => item.path !== currentArticle.path)
+      .map(item => {
+        let score = 0
+
+        if (
+            item.category
+            && item.category === currentArticle.category
+        ) {
+          score += 2
+        }
+
+        const itemTags = item.tags ?? []
+        const matchedTags = itemTags.filter(tag =>
+            currentTags.includes(tag)
+        )
+
+        score += matchedTags.length
+
+        return {
+          article: item,
+          score
+        }
+      })
+      .filter(item => item.score > 0)
+      .sort((a, b) => {
+        if (b.score !== a.score) {
+          return b.score - a.score
+        }
+
+        return (
+            new Date(b.article.date).getTime()
+            - new Date(a.article.date).getTime()
+        )
+      })
+      .slice(0, 3)
+      .map(item => item.article)
+})
+
+/* =========================
    SEO
 ========================= */
 
@@ -85,17 +146,6 @@ const siteUrl = 'https://mytool-mybb.vercel.app'
 
 const canonicalUrl = computed(() => {
   return `${siteUrl}${article.value?.path ?? route.path}`
-})
-
-const articleImageUrl = computed(() => {
-  const imagePath =
-      article.value?.image
-      ?? '/images/tech/default.webp'
-
-  return new URL(
-      imagePath,
-      siteUrl
-  ).toString()
 })
 
 useSeoMeta({
@@ -115,9 +165,6 @@ useSeoMeta({
 
   ogUrl: () =>
       canonicalUrl.value,
-
-  ogImage: () =>
-      articleImageUrl.value,
 
   articlePublishedTime: () =>
       article.value?.date,
@@ -144,40 +191,25 @@ useHead(() => ({
       innerHTML: JSON.stringify({
         '@context': 'https://schema.org',
         '@type': 'Article',
-
         headline:
             article.value?.title ?? '技術文章',
-
         description:
             article.value?.description ?? 'MYBB 技術紀錄',
-
-        image:
-        articleImageUrl.value,
-
         datePublished:
         article.value?.date,
-
-        dateModified:
-            article.value?.updated ?? article.value?.date,
-
         author: {
           '@type': 'Person',
-          name: 'MYBB',
-          url: `${siteUrl}/about`
+          name: 'MYBB'
         },
-
         publisher: {
           '@type': 'Person',
           name: 'MYBB'
         },
-
         mainEntityOfPage: {
           '@type': 'WebPage',
           '@id': canonicalUrl.value
         },
-
-        url:
-        canonicalUrl.value
+        url: canonicalUrl.value
       })
     }
   ]
@@ -342,13 +374,6 @@ watch(
         {{ article.description }}
       </p>
 
-      <img
-          v-if="article.image"
-          :src="article.image"
-          :alt="`${article.title} 封面`"
-          class="article-cover"
-      >
-
       <div
           v-if="article.tags?.length"
           class="article-tags"
@@ -501,6 +526,61 @@ watch(
     </div>
 
     <!-- =========================
+         Related Articles
+    ========================== -->
+
+    <!--
+      相關文章放在正文後、上一篇 / 下一篇之前，
+      只有找到至少一篇相關內容時才顯示整個區塊。
+    -->
+    <section
+        v-if="relatedArticles.length"
+        class="related-section"
+        aria-labelledby="related-title"
+    >
+      <h2
+          id="related-title"
+          class="related-title"
+      >
+        相關文章
+      </h2>
+
+      <div class="related-list">
+        <NuxtLink
+            v-for="relatedArticle in relatedArticles"
+            :key="relatedArticle.path"
+            :to="relatedArticle.path"
+            class="related-card"
+        >
+          <div class="related-meta">
+            {{ relatedArticle.category }}
+          </div>
+
+          <h3>
+            {{ relatedArticle.title }}
+          </h3>
+
+          <p v-if="relatedArticle.description">
+            {{ relatedArticle.description }}
+          </p>
+
+          <div
+              v-if="relatedArticle.tags?.length"
+              class="related-tags"
+          >
+            <span
+                v-for="tag in relatedArticle.tags"
+                :key="tag"
+                class="related-tag"
+            >
+              #{{ tag }}
+            </span>
+          </div>
+        </NuxtLink>
+      </div>
+    </section>
+
+    <!-- =========================
          Previous / Next
     ========================== -->
 
@@ -562,14 +642,6 @@ watch(
 </template>
 
 <style scoped>
-.article-cover {
-  display: block;
-  width: 100%;
-  max-height: 520px;
-  margin: 24px 0 32px;
-  object-fit: cover;
-  border-radius: 12px;
-}
 .article-page {
   max-width: 1100px;
   margin: 0 auto;
@@ -627,15 +699,6 @@ watch(
   font-size: 18px;
   line-height: 1.8;
   color: #555;
-}
-
-.article-cover {
-  display: block;
-  width: 100%;
-  height: auto;
-  margin-top: 28px;
-  border-radius: 12px;
-  object-fit: cover;
 }
 
 .article-tags {
@@ -885,6 +948,88 @@ watch(
 }
 
 /* =========================
+   Related Articles
+========================= */
+
+.related-section {
+  max-width: 780px;
+  margin-bottom: 40px;
+  padding-top: 32px;
+  border-top: 1px solid #e5e5e5;
+}
+
+.related-title {
+  margin: 0 0 24px;
+  font-size: 24px;
+  line-height: 1.4;
+  color: #222;
+}
+
+.related-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.related-card {
+  display: flex;
+  min-width: 0;
+  padding: 20px;
+  flex-direction: column;
+  border: 1px solid #e1e1e1;
+  border-radius: 10px;
+  background: white;
+  color: inherit;
+  text-decoration: none;
+  transition:
+      border-color 0.15s ease,
+      box-shadow 0.15s ease,
+      transform 0.15s ease;
+}
+
+.related-card:hover {
+  border-color: #aaa;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 8%);
+  transform: translateY(-2px);
+}
+
+.related-meta {
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: #777;
+}
+
+.related-card h3 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.5;
+  color: #222;
+}
+
+.related-card p {
+  margin: 10px 0 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #666;
+}
+
+.related-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 14px;
+}
+
+.related-tag {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #f3f3f3;
+  font-size: 12px;
+  color: #555;
+}
+
+/* =========================
    Previous / Next
 ========================= */
 
@@ -1055,6 +1200,14 @@ watch(
 
   .article-navigation {
     max-width: none;
+  }
+
+  .related-section {
+    max-width: none;
+  }
+
+  .related-list {
+    grid-template-columns: 1fr;
   }
 
   .article-footer {
