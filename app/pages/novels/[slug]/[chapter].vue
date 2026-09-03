@@ -8,9 +8,19 @@ type ReadingMode = 'light' | 'sepia' | 'dark'
 
 const fontSize = ref(18)
 const readingMode = ref<ReadingMode>('light')
+const novelContent = ref<HTMLElement | null>(null)
 
 const FONT_SIZE_KEY = 'novel-font-size'
 const READING_MODE_KEY = 'novel-reading-mode'
+const PROGRESS_KEY = `novel-progress:${slug}`
+
+let progressAnimationFrame: number | null = null
+let progressInitialized = false
+
+type SavedReadingProgress = {
+  chapter: string
+  progress: number
+}
 
 /*
  * 從瀏覽器讀取閱讀設定
@@ -18,7 +28,7 @@ const READING_MODE_KEY = 'novel-reading-mode'
  * localStorage 只存在瀏覽器端，
  * 所以必須放在 onMounted 裡。
  */
-onMounted(() => {
+onMounted(async () => {
   const savedFontSize = localStorage.getItem(FONT_SIZE_KEY)
   const savedReadingMode = localStorage.getItem(READING_MODE_KEY)
 
@@ -41,6 +51,23 @@ onMounted(() => {
   ) {
     readingMode.value = savedReadingMode
   }
+
+  await restoreReadingProgress()
+
+  progressInitialized = true
+  window.addEventListener('scroll', scheduleProgressUpdate, {
+    passive: true
+  })
+  window.addEventListener('resize', scheduleProgressUpdate)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', scheduleProgressUpdate)
+  window.removeEventListener('resize', scheduleProgressUpdate)
+
+  if (progressAnimationFrame !== null) {
+    cancelAnimationFrame(progressAnimationFrame)
+  }
 })
 
 /*
@@ -52,6 +79,8 @@ watch(fontSize, (newSize) => {
         FONT_SIZE_KEY,
         String(newSize)
     )
+
+    nextTick(scheduleProgressUpdate)
   }
 })
 
@@ -87,6 +116,113 @@ if (!chapter.value) {
   throw createError({
     statusCode: 404,
     statusMessage: '找不到這個章節'
+  })
+}
+
+/*
+ * 以小說正文區域計算並儲存閱讀進度
+ */
+function saveReadingProgress() {
+  if (
+      !progressInitialized ||
+      !novelContent.value ||
+      !chapter.value
+  ) {
+    return
+  }
+
+  const contentRect = novelContent.value.getBoundingClientRect()
+  const readableDistance = Math.max(
+      contentRect.height - window.innerHeight,
+      1
+  )
+  const readDistance = -contentRect.top
+  const progress = Math.round(
+      Math.min(
+          Math.max(readDistance / readableDistance, 0),
+          1
+      ) * 100
+  )
+
+  localStorage.setItem(
+      PROGRESS_KEY,
+      JSON.stringify({
+        chapter: chapterSlug,
+        chapterTitle: chapter.value.title,
+        progress,
+        updatedAt: new Date().toISOString()
+      })
+  )
+}
+
+function scheduleProgressUpdate() {
+  if (
+      !progressInitialized ||
+      progressAnimationFrame !== null
+  ) {
+    return
+  }
+
+  progressAnimationFrame = requestAnimationFrame(() => {
+    progressAnimationFrame = null
+    saveReadingProgress()
+  })
+}
+
+/*
+ * 正文渲染完成後，恢復目前章節上次閱讀的位置
+ */
+async function restoreReadingProgress() {
+  let savedProgress: SavedReadingProgress | null = null
+
+  try {
+    const savedValue = localStorage.getItem(PROGRESS_KEY)
+
+    if (savedValue) {
+      savedProgress = JSON.parse(savedValue) as SavedReadingProgress
+    }
+  } catch {
+    savedProgress = null
+  }
+
+  await nextTick()
+
+  if (document.fonts?.ready) {
+    await document.fonts.ready
+  }
+
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => resolve())
+    })
+  })
+
+  if (
+      !novelContent.value ||
+      savedProgress?.chapter !== chapterSlug ||
+      !Number.isFinite(savedProgress.progress)
+  ) {
+    return
+  }
+
+  const progress = Math.min(
+      Math.max(savedProgress.progress, 0),
+      100
+  )
+  const contentRect = novelContent.value.getBoundingClientRect()
+  const contentTop = window.scrollY + contentRect.top
+  const readableDistance = Math.max(
+      contentRect.height - window.innerHeight,
+      1
+  )
+
+  window.scrollTo({
+    top: contentTop + readableDistance * (progress / 100),
+    behavior: 'auto'
+  })
+
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve())
   })
 }
 
@@ -263,6 +399,7 @@ function decreaseFontSize() {
 
       <!-- 正文 -->
       <div
+          ref="novelContent"
           class="novel-content"
           :style="{
           fontSize: `${fontSize}px`

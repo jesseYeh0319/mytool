@@ -3,6 +3,45 @@ const route = useRoute()
 
 const slug = route.params.slug as string
 
+interface NovelProgress {
+  chapter: string
+  chapterTitle: string
+  progress: number
+  updatedAt: string
+}
+
+const readingProgress = ref<NovelProgress | null>(null)
+
+onMounted(() => {
+  try {
+    const savedProgress = localStorage.getItem(`novel-progress:${slug}`)
+
+    if (!savedProgress) return
+
+    const parsed = JSON.parse(savedProgress) as Partial<NovelProgress>
+    const progress = Number(parsed.progress)
+
+    if (
+        typeof parsed.chapter !== 'string' ||
+        !parsed.chapter ||
+        typeof parsed.chapterTitle !== 'string' ||
+        !Number.isFinite(progress) ||
+        progress < 0 ||
+        progress > 100 ||
+        typeof parsed.updatedAt !== 'string'
+    ) return
+
+    readingProgress.value = {
+      chapter: parsed.chapter,
+      chapterTitle: parsed.chapterTitle,
+      progress: Math.round(progress),
+      updatedAt: parsed.updatedAt
+    }
+  } catch {
+    readingProgress.value = null
+  }
+})
+
 const { data: book } = await useAsyncData(
     `novel-book-${slug}`,
     () => {
@@ -47,6 +86,27 @@ const { data: chapters } = await useAsyncData(
       <p class="description">
         {{ book.description }}
       </p>
+    </div>
+
+    <!-- 繼續閱讀 -->
+    <div
+        v-if="readingProgress"
+        class="continue-reading"
+    >
+      <div>
+        <span class="continue-label">繼續閱讀</span>
+
+        <h2>{{ readingProgress.chapterTitle }}</h2>
+
+        <p>已閱讀 {{ readingProgress.progress }}%</p>
+      </div>
+
+      <NuxtLink
+          :to="`/novels/${slug}/${readingProgress.chapter}`"
+          class="continue-link"
+      >
+        繼續閱讀 →
+      </NuxtLink>
     </div>
 
     <!-- 章節目錄 -->
@@ -135,6 +195,57 @@ const { data: chapters } = await useAsyncData(
   color: #555;
 }
 
+.continue-reading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+
+  margin-top: 48px;
+  padding: 24px;
+
+  border: 1px solid #e5e5e5;
+  border-radius: 12px;
+
+  background: #fafafa;
+}
+
+.continue-label {
+  display: block;
+  margin-bottom: 8px;
+
+  font-size: 14px;
+  font-weight: 600;
+  color: #777;
+}
+
+.continue-reading h2 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.continue-reading p {
+  margin: 8px 0 0;
+  color: #777;
+}
+
+.continue-link {
+  flex-shrink: 0;
+  padding: 12px 18px;
+
+  border-radius: 8px;
+
+  background: #222;
+
+  font-weight: 600;
+  color: #fff;
+  text-decoration: none;
+}
+
+.continue-link:hover {
+  background: #444;
+}
+
 .chapters-section {
   padding-top: 48px;
 }
@@ -203,6 +314,18 @@ const { data: chapters } = await useAsyncData(
 
   .description {
     font-size: 16px;
+  }
+
+  .continue-reading {
+    align-items: flex-start;
+    flex-direction: column;
+    margin-top: 36px;
+  }
+
+  .continue-link {
+    width: 100%;
+    box-sizing: border-box;
+    text-align: center;
   }
 
   .chapters-section {
