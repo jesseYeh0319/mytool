@@ -88,12 +88,12 @@ const canonicalUrl = computed(() => {
 })
 
 const articleImageUrl = computed(() => {
-  if (!article.value?.image) {
-    return undefined
-  }
+  const imagePath =
+      article.value?.image
+      ?? '/images/tech/default.webp'
 
   return new URL(
-      article.value.image,
+      imagePath,
       siteUrl
   ).toString()
 })
@@ -338,6 +338,13 @@ watch(
         {{ article.title }}
       </h1>
 
+      <img
+          v-if="article?.image"
+          :src="article.image"
+          :alt="article.title"
+          class="article-cover"
+      />
+
       <p class="article-description">
         {{ article.description }}
       </p>
@@ -562,6 +569,14 @@ watch(
 </template>
 
 <style scoped>
+.article-cover {
+  display: block;
+  width: 100%;
+  max-height: 520px;
+  margin: 24px 0 32px;
+  object-fit: cover;
+  border-radius: 12px;
+}
 .article-page {
   max-width: 1100px;
   margin: 0 auto;
