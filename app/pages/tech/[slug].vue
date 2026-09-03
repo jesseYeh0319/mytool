@@ -338,13 +338,6 @@ watch(
         {{ article.title }}
       </h1>
 
-      <img
-          v-if="article?.image"
-          :src="article.image"
-          :alt="article.title"
-          class="article-cover"
-      />
-
       <p class="article-description">
         {{ article.description }}
       </p>
