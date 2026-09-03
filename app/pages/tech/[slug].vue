@@ -81,6 +81,12 @@ const nextArticle = computed(() => {
    SEO
 ========================= */
 
+const siteUrl = 'https://mytool-mybb.vercel.app'
+
+const canonicalUrl = computed(() => {
+  return `${siteUrl}${article.value?.path ?? route.path}`
+})
+
 useSeoMeta({
   title: () =>
       `${article.value?.title ?? '技術文章'} | MYBB`,
@@ -94,8 +100,59 @@ useSeoMeta({
   ogDescription: () =>
       article.value?.description ?? 'MYBB 技術紀錄',
 
-  ogType: 'article'
+  ogType: 'article',
+
+  ogUrl: () =>
+      canonicalUrl.value,
+
+  articlePublishedTime: () =>
+      article.value?.date,
+
+  articleAuthor: [
+    'MYBB'
+  ]
 })
+
+useHead({
+  link: [
+    {
+      rel: 'canonical',
+      href: () => canonicalUrl.value
+    }
+  ]
+})
+
+useHead(() => ({
+  script: [
+    {
+      key: 'article-jsonld',
+      type: 'application/ld+json',
+      innerHTML: JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'Article',
+        headline:
+            article.value?.title ?? '技術文章',
+        description:
+            article.value?.description ?? 'MYBB 技術紀錄',
+        datePublished:
+        article.value?.date,
+        author: {
+          '@type': 'Person',
+          name: 'MYBB'
+        },
+        publisher: {
+          '@type': 'Person',
+          name: 'MYBB'
+        },
+        mainEntityOfPage: {
+          '@type': 'WebPage',
+          '@id': canonicalUrl.value
+        },
+        url: canonicalUrl.value
+      })
+    }
+  ]
+}))
 
 /* =========================
    TOC
