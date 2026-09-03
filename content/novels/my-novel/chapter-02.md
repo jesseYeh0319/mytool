@@ -2,7 +2,7 @@
 title: 繼續前進
 novel: my-novel
 chapter: 2
-isFree: true
+isFree: false
 ---
 
 這是我的第一本小說的第二章。

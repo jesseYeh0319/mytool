@@ -124,7 +124,10 @@ const { data: chapters } = await useAsyncData(
             v-for="chapter in chapters"
             :key="chapter.path"
             :to="chapter.path"
-            class="chapter-item"
+            :class="[
+              'chapter-item',
+              { 'chapter-item--paid': chapter.isFree === false }
+            ]"
         >
           <div>
             <span class="chapter-number">
@@ -136,8 +139,19 @@ const { data: chapters } = await useAsyncData(
             </strong>
           </div>
 
-          <span class="chapter-status">
-            {{ chapter.isFree ? '免費' : '付費' }}
+          <span
+              v-if="chapter.isFree === true"
+              class="chapter-status chapter-status--free"
+          >
+            免費
+          </span>
+
+          <span
+              v-else-if="chapter.isFree === false"
+              class="chapter-status chapter-status--paid"
+          >
+            <span aria-hidden="true">🔒</span>
+            付費
           </span>
         </NuxtLink>
       </div>
@@ -291,6 +305,15 @@ const { data: chapters } = await useAsyncData(
   background: #fafafa;
 }
 
+.chapter-item--paid {
+  border-color: #ddd4c7;
+  background: #fdfbf8;
+}
+
+.chapter-item--paid:hover {
+  background: #f8f3ec;
+}
+
 .chapter-number {
   margin-right: 12px;
 
@@ -299,8 +322,28 @@ const { data: chapters } = await useAsyncData(
 }
 
 .chapter-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+
+  flex-shrink: 0;
+
+  padding: 5px 10px;
+
+  border-radius: 999px;
+
   font-size: 14px;
-  color: #777;
+  font-weight: 600;
+}
+
+.chapter-status--free {
+  background: #edf7f0;
+  color: #34734a;
+}
+
+.chapter-status--paid {
+  background: #f3ece3;
+  color: #79572f;
 }
 
 @media (max-width: 768px) {

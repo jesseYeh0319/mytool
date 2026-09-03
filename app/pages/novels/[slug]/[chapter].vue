@@ -52,6 +52,11 @@ onMounted(async () => {
     readingMode.value = savedReadingMode
   }
 
+  // 付費鎖定章節沒有正文，不恢復或記錄閱讀進度。
+  if (isPaidChapter.value) {
+    return
+  }
+
   await restoreReadingProgress()
 
   progressInitialized = true
@@ -119,11 +124,16 @@ if (!chapter.value) {
   })
 }
 
+const isPaidChapter = computed(() => {
+  return chapter.value?.isFree === false
+})
+
 /*
  * 以小說正文區域計算並儲存閱讀進度
  */
 function saveReadingProgress() {
   if (
+      isPaidChapter.value ||
       !progressInitialized ||
       !novelContent.value ||
       !chapter.value
@@ -157,6 +167,7 @@ function saveReadingProgress() {
 
 function scheduleProgressUpdate() {
   if (
+      isPaidChapter.value ||
       !progressInitialized ||
       progressAnimationFrame !== null
   ) {
@@ -173,6 +184,10 @@ function scheduleProgressUpdate() {
  * 正文渲染完成後，恢復目前章節上次閱讀的位置
  */
 async function restoreReadingProgress() {
+  if (isPaidChapter.value) {
+    return
+  }
+
   let savedProgress: SavedReadingProgress | null = null
 
   try {
@@ -399,6 +414,7 @@ function decreaseFontSize() {
 
       <!-- 正文 -->
       <div
+          v-if="!isPaidChapter"
           ref="novelContent"
           class="novel-content"
           :style="{
@@ -407,6 +423,25 @@ function decreaseFontSize() {
       >
         <ContentRenderer :value="chapter" />
       </div>
+
+      <!-- 付費章節鎖定提示（目前僅 UI，不執行解鎖） -->
+      <section
+          v-else
+          class="paid-chapter-lock"
+          aria-labelledby="paid-chapter-title"
+      >
+        <h2 id="paid-chapter-title">
+          本章為付費章節
+        </h2>
+
+        <p>
+          購買後即可閱讀完整內容
+        </p>
+
+        <button type="button" class="unlock-button">
+          解鎖本章
+        </button>
+      </section>
 
       <!-- 章節導覽 -->
       <nav class="chapter-navigation">
@@ -630,6 +665,52 @@ function decreaseFontSize() {
 
   border-top:
       1px solid rgba(128, 128, 128, 0.3);
+}
+
+/* -------------------------
+   付費章節鎖定
+------------------------- */
+
+.paid-chapter-lock {
+  margin: 56px 0;
+  padding: 56px 24px;
+
+  text-align: center;
+
+  border:
+      1px solid rgba(128, 128, 128, 0.3);
+  border-radius: 12px;
+}
+
+.paid-chapter-lock h2 {
+  margin: 0 0 12px;
+
+  font-size: 24px;
+}
+
+.paid-chapter-lock p {
+  margin: 0 0 28px;
+
+  opacity: 0.7;
+}
+
+.unlock-button {
+  padding: 11px 22px;
+
+  border: 1px solid currentColor;
+  border-radius: 8px;
+
+  background: transparent;
+  color: inherit;
+
+  font: inherit;
+  font-weight: 700;
+
+  cursor: pointer;
+}
+
+.unlock-button:hover {
+  background: rgba(128, 128, 128, 0.1);
 }
 
 /* -------------------------
