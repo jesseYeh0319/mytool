@@ -13,6 +13,8 @@
     "@nuxt/content": "^3.15.2",
     "@nuxtjs/robots": "^6.2.0",
     "@nuxtjs/sitemap": "^8.5.0",
+    "@supabase/ssr": "^0.12.5",
+    "@supabase/supabase-js": "^2.115.0",
     "better-sqlite3": "^12.11.1",
     "nuxt": "^4.5.2",
     "vue": "^3.5.41",

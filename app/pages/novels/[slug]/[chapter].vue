@@ -1,6 +1,19 @@
 <script setup lang="ts">
 const route = useRoute()
 
+const {
+  user,
+  initialized,
+} = useAuth()
+
+const {
+  hasAccess,
+} = useChapterAccess()
+
+const {
+  getPaidChapterContent,
+} = usePaidChapterContent()
+
 const slug = route.params.slug as string
 const chapterSlug = route.params.chapter as string
 
@@ -52,23 +65,11 @@ onMounted(async () => {
     readingMode.value = savedReadingMode
   }
 
-  // 付費鎖定章節沒有正文，不恢復或記錄閱讀進度。
-  if (isPaidChapter.value) {
-    return
-  }
-
-  await restoreReadingProgress()
-
-  progressInitialized = true
-  window.addEventListener('scroll', scheduleProgressUpdate, {
-    passive: true
-  })
-  window.addEventListener('resize', scheduleProgressUpdate)
+  await enableProgressTracking()
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('scroll', scheduleProgressUpdate)
-  window.removeEventListener('resize', scheduleProgressUpdate)
+  disableProgressTracking()
 
   if (progressAnimationFrame !== null) {
     cancelAnimationFrame(progressAnimationFrame)
@@ -128,12 +129,153 @@ const isPaidChapter = computed(() => {
   return chapter.value?.isFree === false
 })
 
+const hasPaidAccess = ref(false)
+const paidChapterBody = ref<string | null>(null)
+const paidContentError = ref(false)
+const accessLoading = ref(isPaidChapter.value)
+let accessRequestId = 0
+
+const canReadChapter = computed(() => {
+  return !isPaidChapter.value || (
+      hasPaidAccess.value &&
+      paidChapterBody.value !== null
+  )
+})
+
+async function refreshChapterAccess() {
+  const requestId = ++accessRequestId
+
+  paidChapterBody.value = null
+  paidContentError.value = false
+
+  if (!isPaidChapter.value) {
+    hasPaidAccess.value = true
+    accessLoading.value = false
+    return
+  }
+
+  if (!initialized.value) {
+    hasPaidAccess.value = false
+    accessLoading.value = true
+    return
+  }
+
+  if (!user.value) {
+    hasPaidAccess.value = false
+    accessLoading.value = false
+    return
+  }
+
+  accessLoading.value = true
+
+  try {
+    const result = await hasAccess(slug, chapterSlug)
+
+    if (requestId !== accessRequestId) {
+      return
+    }
+
+    hasPaidAccess.value = result
+
+    if (!result) {
+      return
+    }
+
+    const body = await getPaidChapterContent(slug, chapterSlug)
+
+    if (requestId !== accessRequestId) {
+      return
+    }
+
+    if (body === null) {
+      paidContentError.value = true
+      return
+    }
+
+    paidChapterBody.value = body
+  } catch (error) {
+    console.error('取得付費章節失敗:', error)
+
+    if (requestId === accessRequestId) {
+      hasPaidAccess.value = false
+      paidChapterBody.value = null
+      paidContentError.value = true
+    }
+  } finally {
+    if (requestId === accessRequestId) {
+      accessLoading.value = false
+    }
+  }
+}
+
+watch(
+    [initialized, () => user.value?.id],
+    refreshChapterAccess,
+    { immediate: true }
+)
+
+watch(canReadChapter, async (canRead) => {
+  if (canRead) {
+    await enableProgressTracking()
+  } else {
+    disableProgressTracking()
+  }
+}, { flush: 'post' })
+
+async function handleUnlock() {
+  if (!user.value) {
+    await navigateTo({
+      path: '/login',
+      query: {
+        redirect: route.fullPath,
+      },
+    })
+
+    return
+  }
+
+  // 已登入但尚未購買；之後可在這裡接正式付款流程。
+  alert('購買功能尚未開放')
+}
+
+async function enableProgressTracking() {
+  if (
+      !import.meta.client ||
+      !canReadChapter.value ||
+      progressInitialized
+  ) {
+    return
+  }
+
+  await restoreReadingProgress()
+
+  if (!canReadChapter.value || !novelContent.value) {
+    return
+  }
+
+  progressInitialized = true
+  window.addEventListener('scroll', scheduleProgressUpdate, {
+    passive: true
+  })
+  window.addEventListener('resize', scheduleProgressUpdate)
+}
+
+function disableProgressTracking() {
+  if (!import.meta.client) {
+    return
+  }
+
+  window.removeEventListener('scroll', scheduleProgressUpdate)
+  window.removeEventListener('resize', scheduleProgressUpdate)
+  progressInitialized = false
+}
+
 /*
  * 以小說正文區域計算並儲存閱讀進度
  */
 function saveReadingProgress() {
   if (
-      isPaidChapter.value ||
+      !canReadChapter.value ||
       !progressInitialized ||
       !novelContent.value ||
       !chapter.value
@@ -167,7 +309,7 @@ function saveReadingProgress() {
 
 function scheduleProgressUpdate() {
   if (
-      isPaidChapter.value ||
+      !canReadChapter.value ||
       !progressInitialized ||
       progressAnimationFrame !== null
   ) {
@@ -184,7 +326,7 @@ function scheduleProgressUpdate() {
  * 正文渲染完成後，恢復目前章節上次閱讀的位置
  */
 async function restoreReadingProgress() {
-  if (isPaidChapter.value) {
+  if (!canReadChapter.value) {
     return
   }
 
@@ -412,7 +554,7 @@ function decreaseFontSize() {
         </h1>
       </header>
 
-      <!-- 正文 -->
+      <!-- 免費章節正文：繼續使用 Nuxt Content -->
       <div
           v-if="!isPaidChapter"
           ref="novelContent"
@@ -424,7 +566,47 @@ function decreaseFontSize() {
         <ContentRenderer :value="chapter" />
       </div>
 
-      <!-- 付費章節鎖定提示（目前僅 UI，不執行解鎖） -->
+      <!-- 付費章節正文：只使用 Supabase 回傳的 body -->
+      <div
+          v-else-if="hasPaidAccess && paidChapterBody !== null"
+          ref="novelContent"
+          class="novel-content paid-chapter-content"
+          :style="{
+          fontSize: `${fontSize}px`
+        }"
+      >{{ paidChapterBody }}</div>
+
+      <!-- 等待登入狀態、權限與付費正文查詢完成 -->
+      <section
+          v-else-if="accessLoading"
+          class="paid-chapter-lock"
+          aria-live="polite"
+      >
+        <h2>
+          正在確認閱讀權限
+        </h2>
+
+        <p>
+          請稍候…
+        </p>
+      </section>
+
+      <!-- 有權限但正文無法取得 -->
+      <section
+          v-else-if="hasPaidAccess && paidContentError"
+          class="paid-chapter-lock"
+          aria-live="polite"
+      >
+        <h2>
+          暫時無法載入本章
+        </h2>
+
+        <p>
+          請重新整理頁面後再試一次
+        </p>
+      </section>
+
+      <!-- 付費章節鎖定提示 -->
       <section
           v-else
           class="paid-chapter-lock"
@@ -435,11 +617,19 @@ function decreaseFontSize() {
         </h2>
 
         <p>
-          購買後即可閱讀完整內容
+          {{
+            user
+                ? '你的帳號尚未擁有本章閱讀權限'
+                : '請先登入，再解鎖本章完整內容'
+          }}
         </p>
 
-        <button type="button" class="unlock-button">
-          解鎖本章
+        <button
+            type="button"
+            class="unlock-button"
+            @click="handleUnlock"
+        >
+          {{ user ? '解鎖本章' : '登入並解鎖' }}
         </button>
       </section>
 
@@ -611,6 +801,10 @@ function decreaseFontSize() {
   padding: 56px 0;
 
   line-height: 2.1;
+}
+
+.paid-chapter-content {
+  white-space: pre-wrap;
 }
 
 .novel-content :deep(h1) {
