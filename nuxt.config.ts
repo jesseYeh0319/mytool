@@ -60,6 +60,8 @@ export default defineNuxtConfig({
     },
 
     runtimeConfig: {
+        supabaseSecretKey: '',
+
         public: {
             supabaseUrl: '',
             supabaseKey: '',

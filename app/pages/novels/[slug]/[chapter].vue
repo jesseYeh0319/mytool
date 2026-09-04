@@ -234,8 +234,42 @@ async function handleUnlock() {
     return
   }
 
-  // 已登入但尚未購買；之後可在這裡接正式付款流程。
-  alert('購買功能尚未開放')
+  try {
+    const supabase = useSupabase()
+
+    const {
+      data: { session },
+      error: sessionError,
+    } = await supabase.auth.getSession()
+
+    if (sessionError || !session) {
+      await navigateTo({
+        path: '/login',
+        query: {
+          redirect: route.fullPath,
+        },
+      })
+
+      return
+    }
+
+    await $fetch('/api/chapters/unlock', {
+      method: 'POST',
+
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+
+      body: {
+        bookSlug: slug,
+        chapterSlug: chapterSlug,
+      },
+    })
+
+    await refreshChapterAccess()
+  } catch (error) {
+    console.error('解鎖章節失敗:', error)
+  }
 }
 
 async function enableProgressTracking() {
