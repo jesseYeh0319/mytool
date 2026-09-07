@@ -3,6 +3,15 @@ const route = useRoute()
 
 const slug = route.params.slug as string
 
+const {
+  user,
+  initialized,
+} = useAuth()
+
+const {
+  getReadingProgressFromCloud,
+} = useReadingProgress()
+
 interface NovelProgress {
   chapter: string
   chapterTitle: string
@@ -12,14 +21,22 @@ interface NovelProgress {
 
 const readingProgress = ref<NovelProgress | null>(null)
 
-onMounted(() => {
+function getLocalReadingProgress(): NovelProgress | null {
   try {
-    const savedProgress = localStorage.getItem(`novel-progress:${slug}`)
+    const savedProgress = localStorage.getItem(
+        `novel-progress:${slug}`
+    )
 
-    if (!savedProgress) return
+    if (!savedProgress) {
+      return null
+    }
 
-    const parsed = JSON.parse(savedProgress) as Partial<NovelProgress>
+    const parsed = JSON.parse(
+        savedProgress
+    ) as Partial<NovelProgress>
+
     const progress = Number(parsed.progress)
+    const updatedAt = Date.parse(parsed.updatedAt ?? '')
 
     if (
         typeof parsed.chapter !== 'string' ||
@@ -28,20 +45,102 @@ onMounted(() => {
         !Number.isFinite(progress) ||
         progress < 0 ||
         progress > 100 ||
-        typeof parsed.updatedAt !== 'string'
-    ) return
+        !Number.isFinite(updatedAt)
+    ) {
+      return null
+    }
 
-    readingProgress.value = {
+    return {
       chapter: parsed.chapter,
       chapterTitle: parsed.chapterTitle,
       progress: Math.round(progress),
-      updatedAt: parsed.updatedAt
+      updatedAt: parsed.updatedAt!,
     }
   } catch {
-    readingProgress.value = null
+    return null
   }
+}
+
+async function loadReadingProgress() {
+  if (!import.meta.client) {
+    return
+  }
+
+  const localProgress = getLocalReadingProgress()
+
+  // 先立即顯示本機資料
+  readingProgress.value = localProgress
+
+  // Auth 尚未初始化或未登入時，只使用 localStorage
+  if (!initialized.value || !user.value) {
+    return
+  }
+
+  const cloudProgress = await getReadingProgressFromCloud(slug)
+
+  if (
+      !cloudProgress ||
+      typeof cloudProgress.chapter_slug !== 'string'
+  ) {
+    return
+  }
+
+  const progress = Number(cloudProgress.progress)
+  const cloudUpdatedAt = Date.parse(
+      cloudProgress.updated_at ?? ''
+  )
+  const localUpdatedAt = localProgress
+      ? Date.parse(localProgress.updatedAt)
+      : Number.NEGATIVE_INFINITY
+
+  if (
+      !Number.isFinite(progress) ||
+      progress < 0 ||
+      progress > 100 ||
+      !Number.isFinite(cloudUpdatedAt) ||
+      cloudUpdatedAt <= localUpdatedAt
+  ) {
+    return
+  }
+
+  const matchedChapter = chapters.value?.find((item) => {
+    return (
+        item.path ===
+        `/novels/${slug}/${cloudProgress.chapter_slug}`
+    )
+  })
+
+  const latestProgress: NovelProgress = {
+    chapter: cloudProgress.chapter_slug,
+    chapterTitle:
+        matchedChapter?.title ??
+        cloudProgress.chapter_slug,
+    progress: Math.round(progress),
+    updatedAt: cloudProgress.updated_at,
+  }
+
+  readingProgress.value = latestProgress
+
+  // 雲端較新時，也更新本機，供章節頁恢復捲動位置
+  localStorage.setItem(
+      `novel-progress:${slug}`,
+      JSON.stringify(latestProgress)
+  )
+}
+
+onMounted(() => {
+  void loadReadingProgress()
 })
 
+watch(
+    [initialized, () => user.value?.id],
+    ([authInitialized]) => {
+      if (authInitialized && import.meta.client) {
+        void loadReadingProgress()
+      }
+    },
+    { flush: 'post' }
+)
 const { data: book } = await useAsyncData(
     `novel-book-${slug}`,
     () => {
