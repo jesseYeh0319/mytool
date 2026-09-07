@@ -20,8 +20,21 @@ type RecentReading = {
   updatedAt: string
 }
 
+type Order = {
+  id: number
+  order_no: string
+  book_slug: string
+  chapter_slug: string
+  amount: number
+  currency: string
+  status: string
+  created_at: string
+  paid_at: string | null
+}
+
 const accessViewList = ref<AccessView[]>([])
 const recentReadings = ref<RecentReading[]>([])
+const orders = ref<Order[]>([])
 
 const {
   user,
@@ -94,6 +107,41 @@ async function loadChapterAccess() {
   } finally {
     loading.value = false
   }
+}
+
+async function loadOrders() {
+  if (!user.value) {
+    orders.value = []
+    return
+  }
+
+  const {
+    data,
+    error,
+  } = await supabase
+      .from('orders')
+      .select(`
+        id,
+        order_no,
+        book_slug,
+        chapter_slug,
+        amount,
+        currency,
+        status,
+        created_at,
+        paid_at
+      `)
+      .order('created_at', {
+        ascending: false,
+      })
+
+  if (error) {
+    console.error('取得訂單紀錄失敗:', error)
+    orders.value = []
+    return
+  }
+
+  orders.value = (data ?? []) as Order[]
 }
 
 async function loadRecentReadings() {
@@ -170,6 +218,7 @@ watch(
       }
 
       await loadChapterAccess()
+      await loadOrders()
 
       if (user.value) {
         await loadRecentReadings()
@@ -312,6 +361,51 @@ watch(
           </NuxtLink>
         </div>
       </section>
+      <section class="orders-section">
+        <h2>訂單紀錄</h2>
+
+        <p
+            v-if="orders.length === 0"
+            class="empty-message"
+        >
+          目前還沒有訂單紀錄。
+        </p>
+
+        <div
+            v-else
+            class="order-list"
+        >
+          <article
+              v-for="order in orders"
+              :key="order.id"
+              class="order-card"
+          >
+            <div>
+              <strong>
+                {{ order.order_no }}
+              </strong>
+
+              <p>
+                {{ order.book_slug }}／{{ order.chapter_slug }}
+              </p>
+            </div>
+
+            <div class="order-meta">
+              <strong>
+                {{ order.currency }} {{ order.amount }}
+              </strong>
+
+              <span>
+          {{ order.status }}
+        </span>
+
+              <time :datetime="order.created_at">
+                {{ new Date(order.created_at).toLocaleDateString('zh-TW') }}
+              </time>
+            </div>
+          </article>
+        </div>
+      </section>
     </div>
   </div>
 </template>
@@ -331,13 +425,15 @@ watch(
 
 .account-info,
 .recent-section,
-.access-section {
+.access-section,
+.orders-section {
   margin-bottom: 40px;
 }
 
 .account-info h2,
 .recent-section h2,
-.access-section h2 {
+.access-section h2,
+.orders-section h2 {
   margin-bottom: 16px;
 
   font-size: 22px;
@@ -448,6 +544,41 @@ watch(
   color: #666;
 }
 
+.order-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.order-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+
+  padding: 18px 20px;
+
+  border: 1px solid #e5e5e5;
+  border-radius: 10px;
+}
+
+.order-card p {
+  margin: 6px 0 0;
+  color: #666;
+}
+
+.order-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+
+  flex-shrink: 0;
+
+  font-size: 13px;
+  color: #666;
+}
+
 .empty-message {
   color: #666;
 }
@@ -470,6 +601,16 @@ watch(
 
   .progress-info {
     width: 100%;
+  }
+
+  .order-card {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .order-meta {
+    align-items: flex-start;
   }
 }
 </style>
