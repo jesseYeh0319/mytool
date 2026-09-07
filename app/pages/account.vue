@@ -145,14 +145,19 @@ async function loadOrders() {
 }
 
 async function loadRecentReadings() {
-  if (!import.meta.client) {
+  if (!import.meta.client || !user.value) {
+    recentReadings.value = []
     return
   }
 
   const books = await queryCollection('novelBooks').all()
+  const chapters = await queryCollection('novelChapters').all()
 
-  const result: RecentReading[] = []
+  const readingMap = new Map<string, RecentReading>()
 
+  /*
+   * 先讀取這台裝置的 localStorage
+   */
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i)
 
@@ -168,18 +173,23 @@ async function loadRecentReadings() {
     }
 
     try {
-      const progress = JSON.parse(value) as {
+      const savedProgress = JSON.parse(value) as {
         chapter?: string
         chapterTitle?: string
         progress?: number
         updatedAt?: string
       }
 
+      const progress = Number(savedProgress.progress)
+      const updatedAt = Date.parse(savedProgress.updatedAt ?? '')
+
       if (
-          !progress.chapter ||
-          !progress.chapterTitle ||
-          typeof progress.progress !== 'number' ||
-          !progress.updatedAt
+          !savedProgress.chapter ||
+          !savedProgress.chapterTitle ||
+          !Number.isFinite(progress) ||
+          progress < 0 ||
+          progress > 100 ||
+          !Number.isFinite(updatedAt)
       ) {
         continue
       }
@@ -188,24 +198,115 @@ async function loadRecentReadings() {
           item => item.stem === `novels/${bookSlug}/index`
       )
 
-      result.push({
+      readingMap.set(bookSlug, {
         bookSlug,
         bookTitle: book?.title ?? bookSlug,
-        chapterSlug: progress.chapter,
-        chapterTitle: progress.chapterTitle,
-        progress: progress.progress,
-        updatedAt: progress.updatedAt,
+        chapterSlug: savedProgress.chapter,
+        chapterTitle: savedProgress.chapterTitle,
+        progress: Math.round(progress),
+        updatedAt: savedProgress.updatedAt!,
       })
     } catch (error) {
-      console.error('讀取閱讀進度失敗:', error)
+      console.error('讀取本機閱讀進度失敗:', error)
     }
   }
 
-  recentReadings.value = result
+  /*
+   * 再讀取會員的 Supabase 閱讀進度
+   */
+  const {
+    data: cloudReadings,
+    error,
+  } = await supabase
+      .from('reading_progress')
+      .select(`
+      book_slug,
+      chapter_slug,
+      progress,
+      updated_at
+    `)
+      .order('updated_at', {
+        ascending: false,
+      })
+
+  if (error) {
+    console.error('取得雲端閱讀進度失敗:', error)
+  } else {
+    for (const cloudReading of cloudReadings ?? []) {
+      const progress = Number(cloudReading.progress)
+      const cloudUpdatedAt = Date.parse(
+          cloudReading.updated_at ?? ''
+      )
+
+      if (
+          typeof cloudReading.book_slug !== 'string' ||
+          typeof cloudReading.chapter_slug !== 'string' ||
+          !Number.isFinite(progress) ||
+          progress < 0 ||
+          progress > 100 ||
+          !Number.isFinite(cloudUpdatedAt)
+      ) {
+        continue
+      }
+
+      const localReading = readingMap.get(
+          cloudReading.book_slug
+      )
+
+      const localUpdatedAt = localReading
+          ? Date.parse(localReading.updatedAt)
+          : Number.NEGATIVE_INFINITY
+
+      // 本機資料較新時，不用雲端覆蓋
+      if (localUpdatedAt >= cloudUpdatedAt) {
+        continue
+      }
+
+      const book = books.find(
+          item =>
+              item.stem ===
+              `novels/${cloudReading.book_slug}/index`
+      )
+
+      const chapter = chapters.find(
+          item =>
+              item.stem ===
+              `novels/${cloudReading.book_slug}/${cloudReading.chapter_slug}`
+      )
+
+      const latestReading: RecentReading = {
+        bookSlug: cloudReading.book_slug,
+        bookTitle:
+            book?.title ?? cloudReading.book_slug,
+        chapterSlug: cloudReading.chapter_slug,
+        chapterTitle:
+            chapter?.title ?? cloudReading.chapter_slug,
+        progress: Math.round(progress),
+        updatedAt: cloudReading.updated_at,
+      }
+
+      readingMap.set(
+          cloudReading.book_slug,
+          latestReading
+      )
+
+      localStorage.setItem(
+          `novel-progress:${cloudReading.book_slug}`,
+          JSON.stringify({
+            chapter: latestReading.chapterSlug,
+            chapterTitle: latestReading.chapterTitle,
+            progress: latestReading.progress,
+            updatedAt: latestReading.updatedAt,
+          })
+      )
+    }
+  }
+
+  recentReadings.value = Array.from(readingMap.values())
       .sort(
           (a, b) =>
-              new Date(b.updatedAt).getTime() -
-              new Date(a.updatedAt).getTime()
+              Date.parse(b.updatedAt) -
+              Date.parse(a.updatedAt)
       )
       .slice(0, 5)
 }
