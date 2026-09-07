@@ -14,6 +14,10 @@ const {
   getPaidChapterContent,
 } = usePaidChapterContent()
 
+const {
+  saveReadingProgressToCloud,
+} = useReadingProgress()
+
 const slug = route.params.slug as string
 const chapterSlug = route.params.chapter as string
 
@@ -29,6 +33,7 @@ const PROGRESS_KEY = `novel-progress:${slug}`
 
 let progressAnimationFrame: number | null = null
 let progressInitialized = false
+let cloudSyncPromise: Promise<void> | null = null
 
 type SavedReadingProgress = {
   chapter: string
@@ -66,6 +71,14 @@ onMounted(async () => {
   }
 
   await enableProgressTracking()
+})
+
+onBeforeRouteLeave(async () => {
+  await syncCurrentProgressToCloud()
+})
+
+onBeforeRouteUpdate(async () => {
+  await syncCurrentProgressToCloud()
 })
 
 onBeforeUnmount(() => {
@@ -339,6 +352,65 @@ function saveReadingProgress() {
         updatedAt: new Date().toISOString()
       })
   )
+}
+
+async function syncCurrentProgressToCloud() {
+  if (
+      !import.meta.client ||
+      !user.value ||
+      !canReadChapter.value
+  ) {
+    return
+  }
+
+  // 先把離開前的最新位置寫進 localStorage
+  saveReadingProgress()
+
+  // 若背景同步仍在執行，先等它結束
+  if (cloudSyncPromise) {
+    await cloudSyncPromise
+  }
+
+  let savedProgress: SavedReadingProgress | null = null
+
+  try {
+    const savedValue = localStorage.getItem(PROGRESS_KEY)
+
+    if (savedValue) {
+      savedProgress = JSON.parse(
+          savedValue
+      ) as SavedReadingProgress
+    }
+  } catch {
+    savedProgress = null
+  }
+
+  if (
+      savedProgress?.chapter !== chapterSlug ||
+      !Number.isFinite(savedProgress.progress)
+  ) {
+    return
+  }
+
+  const progress = Math.min(
+      Math.max(savedProgress.progress, 0),
+      100
+  )
+
+  cloudSyncPromise = (async () => {
+    await saveReadingProgressToCloud({
+      userId: user.value!.id,
+      bookSlug: slug,
+      chapterSlug,
+      progress,
+    })
+  })()
+
+  try {
+    await cloudSyncPromise
+  } finally {
+    cloudSyncPromise = null
+  }
 }
 
 function scheduleProgressUpdate() {
