@@ -219,6 +219,52 @@ watch(
         </p>
       </section>
 
+      <section class="recent-section">
+        <h2>最近閱讀</h2>
+
+        <p
+            v-if="recentReadings.length === 0"
+            class="empty-message"
+        >
+          目前還沒有閱讀紀錄。
+        </p>
+
+        <div
+            v-else
+            class="recent-list"
+        >
+          <NuxtLink
+              v-for="reading in recentReadings"
+              :key="`${reading.bookSlug}-${reading.chapterSlug}`"
+              :to="`/novels/${reading.bookSlug}/${reading.chapterSlug}`"
+              class="recent-card"
+          >
+            <div>
+              <strong>
+                {{ reading.bookTitle }}
+              </strong>
+
+              <p>
+                {{ reading.chapterTitle }}
+              </p>
+            </div>
+
+            <div class="progress-info">
+  <span>
+    閱讀進度 {{ reading.progress }}%
+  </span>
+
+              <div class="progress-track">
+                <div
+                    class="progress-bar"
+                    :style="{ width: `${reading.progress}%` }"
+                />
+              </div>
+            </div>
+          </NuxtLink>
+        </div>
+      </section>
+
       <section class="access-section">
         <h2>已解鎖章節</h2>
 
@@ -284,11 +330,13 @@ watch(
 }
 
 .account-info,
+.recent-section,
 .access-section {
   margin-bottom: 40px;
 }
 
 .account-info h2,
+.recent-section h2,
 .access-section h2 {
   margin-bottom: 16px;
 
@@ -314,6 +362,61 @@ watch(
   text-decoration: none;
   color: white;
   font-weight: 700;
+}
+
+.recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.recent-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+
+  padding: 18px 20px;
+
+  border: 1px solid #e5e5e5;
+  border-radius: 10px;
+
+  text-decoration: none;
+  color: #222;
+}
+
+.recent-card:hover {
+  border-color: #aaa;
+}
+
+.recent-card p {
+  margin: 6px 0 0;
+  color: #666;
+}
+
+.progress-info {
+  width: 150px;
+  flex-shrink: 0;
+
+  font-size: 13px;
+  color: #666;
+}
+
+.progress-track {
+  height: 6px;
+  margin-top: 8px;
+
+  overflow: hidden;
+
+  border-radius: 999px;
+  background: #e5e5e5;
+}
+
+.progress-bar {
+  height: 100%;
+
+  border-radius: 999px;
+  background: #222;
 }
 
 .access-list {
@@ -358,10 +461,15 @@ watch(
     font-size: 28px;
   }
 
+  .recent-card,
   .access-card {
     align-items: flex-start;
     flex-direction: column;
     gap: 12px;
+  }
+
+  .progress-info {
+    width: 100%;
   }
 }
 </style>

@@ -1,13 +1,18 @@
-export default defineNuxtPlugin(async () => {
+export default defineNuxtPlugin((nuxtApp) => {
     const {
         initializeAuth,
     } = useAuth()
 
-    const subscription = await initializeAuth()
+    let subscription:
+        Awaited<ReturnType<typeof initializeAuth>> | undefined
+
+    nuxtApp.hook('app:mounted', async () => {
+        subscription = await initializeAuth()
+    })
 
     if (import.meta.hot) {
         import.meta.hot.dispose(() => {
-            subscription.unsubscribe()
+            subscription?.unsubscribe()
         })
     }
 })
