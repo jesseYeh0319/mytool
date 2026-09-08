@@ -21,6 +21,7 @@ const {
 const slug = route.params.slug as string
 const chapterSlug = route.params.chapter as string
 const paymentAvailable = import.meta.dev
+const purchaseConsent = ref(false)
 
 type ReadingMode = 'light' | 'sepia' | 'dark'
 
@@ -245,6 +246,10 @@ async function handleUnlock() {
       },
     })
 
+    return
+  }
+
+  if (!purchaseConsent.value) {
     return
   }
 
@@ -740,10 +745,44 @@ function decreaseFontSize() {
           本商品為線上提供的數位內容，不寄送實體商品。
         </p>
 
+        <label
+            v-if="user"
+            class="purchase-consent"
+        >
+          <input
+              v-model="purchaseConsent"
+              type="checkbox"
+          >
+
+          <span>
+    我已閱讀並同意
+    <NuxtLink
+        to="/terms"
+        target="_blank"
+        @click.stop
+    >
+      服務條款
+    </NuxtLink>
+    與
+    <NuxtLink
+        to="/refund"
+        target="_blank"
+        @click.stop
+    >
+      退款政策
+    </NuxtLink>
+    ，並同意付款完成後立即提供數位內容，
+    知悉內容開始提供後不適用七日解除權。
+  </span>
+        </label>
+
         <button
             type="button"
             class="unlock-button"
-            :disabled="!paymentAvailable"
+            :disabled="
+              !paymentAvailable ||
+              Boolean(user && !purchaseConsent)
+            "
             @click="handleUnlock"
         >
           {{
@@ -1026,6 +1065,42 @@ function decreaseFontSize() {
   text-wrap: balance;
 
   opacity: 0.8;
+}
+
+.purchase-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+
+  max-width: 600px;
+  margin: 0 auto 24px;
+
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.7;
+
+  cursor: pointer;
+}
+
+.purchase-consent input {
+  flex-shrink: 0;
+
+  width: 16px;
+  height: 16px;
+  margin-top: 3px;
+}
+
+.purchase-consent span {
+  opacity: 0.8;
+}
+
+.purchase-consent a {
+  color: inherit;
+  font-weight: 700;
+}
+
+.purchase-consent a:hover {
+  text-decoration: none;
 }
 
 .unlock-button:disabled {

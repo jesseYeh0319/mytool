@@ -142,8 +142,14 @@ async function signOut() {
 
 <style scoped>
 .site-header {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+
   border-bottom: 1px solid #e5e5e5;
-  background: white;
+
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(10px);
 }
 
 .nav-container {
