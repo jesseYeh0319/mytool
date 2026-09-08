@@ -101,6 +101,42 @@ async function signOut() {
     <main class="page-container">
       <slot />
     </main>
+    <footer class="site-footer">
+      <div class="footer-container">
+        <div>
+          <strong>MYBB 數位閱讀</strong>
+
+          <p>
+            原創小說與技術內容閱讀平台
+          </p>
+        </div>
+
+        <nav
+            class="footer-links"
+            aria-label="網站政策"
+        >
+          <NuxtLink to="/terms">
+            服務條款
+          </NuxtLink>
+
+          <NuxtLink to="/privacy">
+            隱私權政策
+          </NuxtLink>
+
+          <NuxtLink to="/refund">
+            退款政策
+          </NuxtLink>
+
+          <a href="mailto:yehweiyang@gmail.com">
+            聯絡客服
+          </a>
+        </nav>
+      </div>
+
+      <p class="copyright">
+        © 2026 MYBB. All rights reserved.
+      </p>
+    </footer>
   </div>
 </template>
 
@@ -190,8 +226,74 @@ async function signOut() {
   padding: 40px 20px;
 }
 
+.site-footer {
+  margin-top: 80px;
+
+  border-top: 1px solid #e5e5e5;
+
+  background: #fafafa;
+}
+
+.footer-container {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 32px;
+
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 36px 20px 28px;
+}
+
+.footer-container strong {
+  font-size: 18px;
+}
+
+.footer-container p {
+  margin: 8px 0 0;
+
+  color: #666;
+}
+
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 12px 20px;
+}
+
+.footer-links a {
+  color: #444;
+  text-decoration: none;
+}
+
+.footer-links a:hover {
+  text-decoration: underline;
+}
+
+.copyright {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 20px;
+
+  border-top: 1px solid #e5e5e5;
+
+  font-size: 13px;
+  color: #777;
+}
+
 /* 手機版 */
 @media (max-width: 768px) {
+
+  .footer-container {
+    flex-direction: column;
+  }
+
+  .footer-links {
+    flex-direction: column;
+    justify-content: flex-start;
+  }
+  
   .nav-container {
     padding: 16px 20px;
   }
