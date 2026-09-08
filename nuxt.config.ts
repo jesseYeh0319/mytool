@@ -70,6 +70,7 @@ export default defineNuxtConfig({
         newebpayMerchantId: '',
         newebpayHashKey: '',
         newebpayHashIv: '',
+        newebpayNotifyUrl: '',
 
         /*
          * 目前先使用藍新測試付款網址。

@@ -1,5 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
 
+import {
+  createNewebpayTrade,
+} from '../../utils/newebpay'
+
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig(event)
   const authorization = getHeader(event, 'authorization')
@@ -144,14 +148,90 @@ export default defineEventHandler(async (event) => {
 
   setResponseHeader(event, 'Cache-Control', 'no-store')
 
+// 這一階段只允許藍新測試環境。
+  const testGateway =
+      'https://ccore.newebpay.com/MPG/mpg_gateway'
+
+  if (
+      config.newebpayApiUrl !== testGateway ||
+      !config.newebpayMerchantId ||
+      Buffer.byteLength(config.newebpayHashKey, 'utf8') !== 32 ||
+      Buffer.byteLength(config.newebpayHashIv, 'utf8') !== 16
+  ) {
+    throw createError({
+      statusCode: 503,
+      statusMessage: 'Payment configuration unavailable',
+    })
+  }
+
+  let notifyUrl: URL
+
+  try {
+    notifyUrl = new URL(config.newebpayNotifyUrl)
+
+    if (
+        notifyUrl.protocol !== 'https:' ||
+        notifyUrl.username ||
+        notifyUrl.password ||
+        (notifyUrl.port && notifyUrl.port !== '443')
+    ) {
+      throw new Error('Invalid notification URL')
+    }
+  } catch {
+    throw createError({
+      statusCode: 503,
+      statusMessage: 'Invalid payment notification URL',
+    })
+  }
+
+  const trade = createNewebpayTrade(
+      {
+        MerchantID: config.newebpayMerchantId,
+        RespondType: 'JSON',
+        TimeStamp: Math.floor(Date.now() / 1000),
+        Version: '2.0',
+
+        MerchantOrderNo: order.order_no,
+        Amt: order.amount,
+        ItemDesc: 'MYBB 小說章節閱讀權限',
+
+        NotifyURL: notifyUrl.toString(),
+
+        // 目前通知 API 只支援一般信用卡付款。
+        CREDIT: 1,
+        InstFlag: '0',
+        CreditRed: 0,
+        UNIONPAY: 0,
+        WEBATM: 0,
+        VACC: 0,
+        CVS: 0,
+        BARCODE: 0,
+
+        LoginType: 0,
+      },
+      config.newebpayHashKey,
+      config.newebpayHashIv,
+  )
+
   return {
     success: true,
+
     order: {
       order_no: order.order_no,
-      book_slug: order.book_slug,
-      chapter_slug: order.chapter_slug,
       amount: order.amount,
       currency: order.currency,
+    },
+
+    payment: {
+      action: testGateway,
+
+      fields: {
+        MerchantID: config.newebpayMerchantId,
+        TradeInfo: trade.TradeInfo,
+        TradeSha: trade.TradeSha,
+        Version: '2.0',
+        EncryptType: 0,
+      },
     },
   }
 })

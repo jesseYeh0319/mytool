@@ -27,6 +27,7 @@ const createdOrderNo = ref('')
 const purchaseError = ref('')
 const orderReused = ref(false)
 const pendingOrderLoading = ref(false)
+const paymentSubmitting = ref(false)
 
 type ReadingMode = 'light' | 'sepia' | 'dark'
 
@@ -382,6 +383,119 @@ async function handlePurchase() {
     orderCreating.value = false
   }
 }
+
+async function handlePayment() {
+  if (
+      !import.meta.client ||
+      !paymentAvailable ||
+      !createdOrderNo.value ||
+      paymentSubmitting.value
+  ) {
+    return
+  }
+
+  purchaseError.value = ''
+  paymentSubmitting.value = true
+
+  try {
+    const supabase = useSupabase()
+
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.getSession()
+
+    if (error || !session) {
+      await navigateTo({
+        path: '/login',
+        query: {
+          redirect: route.fullPath,
+        },
+      })
+
+      return
+    }
+
+    const result = await $fetch<{
+      success: boolean
+      payment: {
+        action: string
+        fields: {
+          MerchantID: string
+          TradeInfo: string
+          TradeSha: string
+          Version: string
+          EncryptType: number
+        }
+      }
+    }>('/api/payments/prepare', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: {
+        orderNo: createdOrderNo.value,
+      },
+    })
+
+    const testGateway =
+        'https://ccore.newebpay.com/MPG/mpg_gateway'
+
+    if (
+        !result.success ||
+        result.payment.action !== testGateway
+    ) {
+      throw new Error('Invalid payment destination')
+    }
+
+    // 藍新使用表單 POST 接收付款資料。
+    const form = document.createElement('form')
+    form.method = 'POST'
+    form.action = testGateway
+    form.acceptCharset = 'UTF-8'
+    form.hidden = true
+
+    for (
+        const [name, value] of
+        Object.entries(result.payment.fields)
+        ) {
+      const input = document.createElement('input')
+      input.type = 'hidden'
+      input.name = name
+      input.value = String(value)
+      form.appendChild(input)
+    }
+
+    document.body.appendChild(form)
+
+    try {
+      form.submit()
+    } finally {
+      form.remove()
+    }
+  } catch (error: unknown) {
+    const statusCode =
+        error &&
+        typeof error === 'object' &&
+        'statusCode' in error
+            ? error.statusCode
+            : undefined
+
+    if (statusCode === 409) {
+      purchaseError.value =
+          '此訂單目前無法付款，可能已逾期或章節已解鎖。請重新整理頁面確認。'
+    } else {
+      purchaseError.value =
+          '目前無法開啟付款頁，請稍後再試。'
+    }
+
+    // 不輸出付款表單或加密資料。
+    console.error('開啟付款頁失敗')
+  } finally {
+    paymentSubmitting.value = false
+  }
+}
+
 async function enableProgressTracking() {
   if (
       !import.meta.client ||
@@ -868,6 +982,21 @@ function decreaseFontSize() {
           <p>
             尚未完成付款前，不需要再次建立訂單。
           </p>
+
+          <button
+              v-if="paymentAvailable"
+              type="button"
+              class="unlock-button"
+              :disabled="paymentSubmitting"
+              :aria-busy="paymentSubmitting"
+              @click="handlePayment"
+          >
+            {{
+              paymentSubmitting
+                  ? '正在前往付款…'
+                  : '前往測試付款'
+            }}
+          </button>
 
           <NuxtLink
               to="/account"
