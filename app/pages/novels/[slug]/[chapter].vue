@@ -25,6 +25,8 @@ const purchaseConsent = ref(false)
 const orderCreating = ref(false)
 const createdOrderNo = ref('')
 const purchaseError = ref('')
+const orderReused = ref(false)
+const pendingOrderLoading = ref(false)
 
 type ReadingMode = 'light' | 'sepia' | 'dark'
 
@@ -228,7 +230,10 @@ async function refreshChapterAccess() {
 
 watch(
     [initialized, () => user.value?.id],
-    refreshChapterAccess,
+    async () => {
+      await refreshChapterAccess()
+      await loadPendingOrder()
+    },
     { immediate: true }
 )
 
@@ -240,8 +245,68 @@ watch(canReadChapter, async (canRead) => {
   }
 }, { flush: 'post' })
 
+async function loadPendingOrder() {
+  createdOrderNo.value = ''
+  orderReused.value = false
+
+  if (
+      !import.meta.client ||
+      !initialized.value ||
+      !user.value ||
+      !isPaidChapter.value
+  ) {
+    return
+  }
+
+  pendingOrderLoading.value = true
+
+  try {
+    const supabase = useSupabase()
+
+    const pendingOrderCutoff = new Date(
+        Date.now() - 30 * 60 * 1000
+    ).toISOString()
+
+    const {
+      data,
+      error,
+    } = await supabase
+        .from('orders')
+        .select(`
+        order_no,
+        created_at
+      `)
+        .eq('book_slug', slug)
+        .eq('chapter_slug', chapterSlug)
+        .eq('status', 'pending')
+        .eq('payment_provider', 'newebpay')
+        .gte('created_at', pendingOrderCutoff)
+        .order('created_at', {
+          ascending: false,
+        })
+        .limit(1)
+        .maybeSingle()
+
+    if (error) {
+      console.error(
+          '取得待付款訂單失敗:',
+          error
+      )
+      return
+    }
+
+    if (data) {
+      createdOrderNo.value = data.order_no
+      orderReused.value = true
+    }
+  } finally {
+    pendingOrderLoading.value = false
+  }
+}
+
 async function handlePurchase() {
   purchaseError.value = ''
+  orderReused.value = false
 
   if (!user.value) {
     await navigateTo({
@@ -285,6 +350,7 @@ async function handlePurchase() {
 
     const result = await $fetch<{
       success: boolean
+      reused: boolean
       order: {
         order_no: string
       }
@@ -303,6 +369,7 @@ async function handlePurchase() {
     })
 
     createdOrderNo.value = result.order.order_no
+    orderReused.value = result.reused
   } catch (error) {
     console.error('建立訂單失敗:', error)
     purchaseError.value =
@@ -760,86 +827,109 @@ function decreaseFontSize() {
           本章售價 NT$ {{ chapter.price }}
         </p>
 
-        <p class="delivery-note">
-          付款成功後，閱讀權限將立即開通至購買時使用的會員帳號。
-          本商品為線上提供的數位內容，不寄送實體商品。
+        <!-- 正在查詢是否有待付款訂單 -->
+        <p
+            v-if="pendingOrderLoading"
+            class="pending-order-message"
+        >
+          正在確認待付款訂單…
         </p>
 
-        <label
-            v-if="user"
-            class="purchase-consent"
+        <!-- 已有待付款訂單：不再顯示購買選項 -->
+        <div
+            v-else-if="createdOrderNo"
+            class="pending-order-box"
         >
-          <input
-              v-model="purchaseConsent"
-              type="checkbox"
-          >
+          <strong>
+            你已有一筆待付款訂單
+          </strong>
 
           <span>
-    我已閱讀並同意
-    <NuxtLink
-        to="/terms"
-        target="_blank"
-        @click.stop
-    >
-      服務條款
-    </NuxtLink>
-    與
-    <NuxtLink
-        to="/refund"
-        target="_blank"
-        @click.stop
-    >
-      退款政策
-    </NuxtLink>
-    ，並同意付款完成後立即提供數位內容，
-    知悉內容開始提供後不適用七日解除權。
+    訂單編號：{{ createdOrderNo }}
   </span>
-        </label>
 
-        <button
-            type="button"
-            class="unlock-button"
-            :disabled="
-              !paymentAvailable ||
-              orderCreating ||
-              Boolean(createdOrderNo) ||
-              Boolean(user && !purchaseConsent)
-            "
-            @click="handlePurchase"
-        >
-          {{
-            orderCreating
-                ? '建立訂單中…'
-                : createdOrderNo
-                    ? '測試訂單已建立'
-                    : paymentAvailable
-                        ? (
-                            user
-                                ? `建立測試訂單 NT$ ${chapter.price}`
-                                : '登入後購買'
-                        )
-                        : '付款功能準備中'
-          }}
-        </button>
+          <p>
+            尚未完成付款前，不需要再次建立訂單。
+          </p>
 
-        <p
-            v-if="createdOrderNo"
-            class="purchase-success"
-        >
-          測試訂單已建立：{{ createdOrderNo }}
-
-          <NuxtLink to="/account">
+          <NuxtLink
+              to="/account"
+              class="pending-order-link"
+          >
             前往會員中心查看
           </NuxtLink>
-        </p>
+        </div>
 
+        <!-- 沒有待付款訂單：才顯示購買選項 -->
+        <template v-else>
+          <label
+              v-if="user"
+              class="purchase-consent"
+          >
+            <input
+                v-model="purchaseConsent"
+                type="checkbox"
+            >
+
+            <span>
+      我已閱讀並同意
+
+      <NuxtLink
+          to="/terms"
+          target="_blank"
+          @click.stop
+      >
+        服務條款
+      </NuxtLink>
+
+      與
+
+      <NuxtLink
+          to="/refund"
+          target="_blank"
+          @click.stop
+      >
+        退款政策
+      </NuxtLink>
+
+      ，並同意付款完成後立即提供數位內容，
+      知悉內容開始提供後不適用七日解除權。
+    </span>
+          </label>
+
+          <button
+              type="button"
+              class="unlock-button"
+              :disabled="
+        !paymentAvailable ||
+        orderCreating ||
+        Boolean(user && !purchaseConsent)
+      "
+              @click="handlePurchase"
+          >
+            {{
+              orderCreating
+                  ? '建立訂單中…'
+                  : paymentAvailable
+                      ? (
+                          user
+                              ? `建立測試訂單 NT$ ${chapter.price}`
+                              : '登入後購買'
+                      )
+                      : '付款功能準備中'
+            }}
+          </button>
+        </template>
+
+        <!-- 建立或查詢訂單失敗 -->
         <p
-            v-else-if="purchaseError"
+            v-if="purchaseError"
             class="purchase-error"
             role="alert"
         >
           {{ purchaseError }}
         </p>
+
       </section>
 
       <!-- 章節導覽 -->
@@ -877,6 +967,46 @@ function decreaseFontSize() {
 </template>
 
 <style scoped>
+.pending-order-message {
+  margin: 20px 0 0;
+}
+
+.pending-order-box {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 20px;
+
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  border-radius: 10px;
+
+  text-align: left;
+}
+
+.pending-order-box strong,
+.pending-order-box span {
+  display: block;
+}
+
+.pending-order-box span {
+  margin-top: 8px;
+
+  font-size: 13px;
+  opacity: 0.7;
+}
+
+.paid-chapter-lock .pending-order-box p {
+  margin: 12px 0;
+
+  font-size: 14px;
+}
+
+.pending-order-link {
+  display: inline-block;
+
+  color: inherit;
+  font-weight: 700;
+}
+
 .reader-wrapper {
   margin: -40px -20px 0;
   padding: 40px 20px 100px;
