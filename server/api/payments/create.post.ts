@@ -136,6 +136,35 @@ export default defineEventHandler(async (event) => {
         Date.now() - 30 * 60 * 1000
     ).toISOString()
 
+    /*
+ * 將30分鐘前仍未付款的同章節訂單標記為已取消。
+ */
+    const {
+        error: expiredOrderError,
+    } = await supabaseAdmin
+        .from('orders')
+        .update({
+            status: 'cancelled',
+        })
+        .eq('user_id', user.id)
+        .eq('book_slug', bookSlug)
+        .eq('chapter_slug', chapterSlug)
+        .eq('status', 'pending')
+        .lt('created_at', pendingOrderCutoff)
+
+    if (expiredOrderError) {
+        console.error(
+            '取消過期待付款訂單失敗:',
+            expiredOrderError
+        )
+
+        throw createError({
+            statusCode: 500,
+            statusMessage:
+                'Failed to expire pending order',
+        })
+    }
+
     const {
         data: existingPendingOrder,
         error: pendingOrderError,
