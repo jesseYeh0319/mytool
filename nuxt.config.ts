@@ -1,4 +1,5 @@
 export default defineNuxtConfig({
+    compatibilityDate: '2026-09-08',
     modules: [
         '@nuxt/content',
         '@nuxtjs/sitemap',
