@@ -48,6 +48,7 @@ export default defineContentConfig({
         chapter: z.number(),
         date: z.string(),
         isFree: z.boolean(),
+        price: z.number().int().nonnegative(),
       }),
     }),
   },

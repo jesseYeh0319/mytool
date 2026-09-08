@@ -4,6 +4,7 @@ novel: 我的第一本小說
 chapter: 1
 date: 2026-08-25
 isFree: true
+price: 0
 ---
 
 # 第一章　開始

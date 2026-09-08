@@ -20,6 +20,7 @@ const {
 
 const slug = route.params.slug as string
 const chapterSlug = route.params.chapter as string
+const paymentAvailable = import.meta.dev
 
 type ReadingMode = 'light' | 'sepia' | 'dark'
 
@@ -730,12 +731,26 @@ function decreaseFontSize() {
           }}
         </p>
 
+        <p class="chapter-price">
+          本章售價 NT$ {{ chapter.price }}
+        </p>
+
+        <p class="delivery-note">
+          付款成功後，閱讀權限將立即開通至購買時使用的會員帳號。
+          本商品為線上提供的數位內容，不寄送實體商品。
+        </p>
+
         <button
             type="button"
             class="unlock-button"
+            :disabled="!paymentAvailable"
             @click="handleUnlock"
         >
-          {{ user ? '解鎖本章' : '登入並解鎖' }}
+          {{
+            paymentAvailable
+                ? (user ? `測試解鎖 NT$ ${chapter.price}` : '登入並測試解鎖')
+                : '付款功能準備中'
+          }}
         </button>
       </section>
 
@@ -994,6 +1009,30 @@ function decreaseFontSize() {
   opacity: 0.7;
 }
 
+.chapter-price {
+  font-size: 22px;
+  font-weight: 700;
+  color: inherit;
+  opacity: 1;
+}
+
+.paid-chapter-lock .delivery-note {
+  max-width: 600px;
+  margin: 0 auto 28px;
+
+  font-size: 14px;
+  line-height: 1.8;
+  text-align: center;
+  text-wrap: balance;
+
+  opacity: 0.8;
+}
+
+.unlock-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .unlock-button {
   padding: 11px 22px;
 
@@ -1074,6 +1113,11 @@ function decreaseFontSize() {
 ------------------------- */
 
 @media (max-width: 768px) {
+  .paid-chapter-lock .delivery-note {
+    max-width: 100%;
+    text-align: left;
+  }
+
   .reader-wrapper {
     margin-top: -24px;
 
