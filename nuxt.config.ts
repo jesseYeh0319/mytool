@@ -63,6 +63,20 @@ export default defineNuxtConfig({
     runtimeConfig: {
         supabaseSecretKey: '',
 
+        /*
+         * 藍新金流機密設定，只能在 Server 使用。
+         * 不可以放進 public。
+         */
+        newebpayMerchantId: '',
+        newebpayHashKey: '',
+        newebpayHashIv: '',
+
+        /*
+         * 目前先使用藍新測試付款網址。
+         */
+        newebpayApiUrl:
+            'https://ccore.newebpay.com/MPG/mpg_gateway',
+
         public: {
             supabaseUrl: '',
             supabaseKey: '',

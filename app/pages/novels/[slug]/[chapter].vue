@@ -36,7 +36,11 @@ const novelContent = ref<HTMLElement | null>(null)
 
 const FONT_SIZE_KEY = 'novel-font-size'
 const READING_MODE_KEY = 'novel-reading-mode'
-const PROGRESS_KEY = `novel-progress:${slug}`
+// 每本小說的最新閱讀位置，供小說列表與會員中心顯示。
+const BOOK_PROGRESS_KEY = `novel-progress:${slug}`
+
+// 每個章節各自保存位置，避免閱讀其他章節時覆蓋。
+const CHAPTER_PROGRESS_KEY = `novel-progress:${slug}:${chapterSlug}`
 
 let progressAnimationFrame: number | null = null
 let progressInitialized = false
@@ -436,15 +440,18 @@ function saveReadingProgress() {
       ) * 100
   )
 
-  localStorage.setItem(
-      PROGRESS_KEY,
-      JSON.stringify({
-        chapter: chapterSlug,
-        chapterTitle: chapter.value.title,
-        progress,
-        updatedAt: new Date().toISOString()
-      })
-  )
+  const savedProgress = JSON.stringify({
+    chapter: chapterSlug,
+    chapterTitle: chapter.value.title,
+    progress,
+    updatedAt: new Date().toISOString()
+  })
+
+  // 保留整本小說的最新進度，供「繼續閱讀」使用。
+  localStorage.setItem(BOOK_PROGRESS_KEY, savedProgress)
+
+  // 另外保存目前章節自己的進度，供再次進入本章時恢復。
+  localStorage.setItem(CHAPTER_PROGRESS_KEY, savedProgress)
 }
 
 async function syncCurrentProgressToCloud() {
@@ -467,7 +474,7 @@ async function syncCurrentProgressToCloud() {
   let savedProgress: SavedReadingProgress | null = null
 
   try {
-    const savedValue = localStorage.getItem(PROGRESS_KEY)
+    const savedValue = localStorage.getItem(CHAPTER_PROGRESS_KEY)
 
     if (savedValue) {
       savedProgress = JSON.parse(
@@ -532,7 +539,9 @@ async function restoreReadingProgress() {
   let savedProgress: SavedReadingProgress | null = null
 
   try {
-    const savedValue = localStorage.getItem(PROGRESS_KEY)
+    const savedValue =
+        localStorage.getItem(CHAPTER_PROGRESS_KEY) ??
+        localStorage.getItem(BOOK_PROGRESS_KEY)
 
     if (savedValue) {
       savedProgress = JSON.parse(savedValue) as SavedReadingProgress
@@ -559,6 +568,14 @@ async function restoreReadingProgress() {
       !Number.isFinite(savedProgress.progress)
   ) {
     return
+  }
+
+  // 舊版只有每本小說一筆資料；讀到後順便遷移成本章資料。
+  if (!localStorage.getItem(CHAPTER_PROGRESS_KEY)) {
+    localStorage.setItem(
+        CHAPTER_PROGRESS_KEY,
+        JSON.stringify(savedProgress)
+    )
   }
 
   const progress = Math.min(

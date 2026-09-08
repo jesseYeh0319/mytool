@@ -225,6 +225,12 @@ async function loadRecentReadings() {
     }
 
     const bookSlug = key.replace('novel-progress:', '')
+
+    // 章節專用 key 由章節頁自行使用；會員中心只讀每本小說的最新進度。
+    if (bookSlug.includes(':')) {
+      continue
+    }
+
     const value = localStorage.getItem(key)
 
     if (!value) {
