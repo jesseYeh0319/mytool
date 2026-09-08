@@ -22,6 +22,9 @@ const slug = route.params.slug as string
 const chapterSlug = route.params.chapter as string
 const paymentAvailable = import.meta.dev
 const purchaseConsent = ref(false)
+const orderCreating = ref(false)
+const createdOrderNo = ref('')
+const purchaseError = ref('')
 
 type ReadingMode = 'light' | 'sepia' | 'dark'
 
@@ -237,7 +240,9 @@ watch(canReadChapter, async (canRead) => {
   }
 }, { flush: 'post' })
 
-async function handleUnlock() {
+async function handlePurchase() {
+  purchaseError.value = ''
+
   if (!user.value) {
     await navigateTo({
       path: '/login',
@@ -249,9 +254,15 @@ async function handleUnlock() {
     return
   }
 
-  if (!purchaseConsent.value) {
+  if (
+      !purchaseConsent.value ||
+      orderCreating.value ||
+      createdOrderNo.value
+  ) {
     return
   }
+
+  orderCreating.value = true
 
   try {
     const supabase = useSupabase()
@@ -272,25 +283,34 @@ async function handleUnlock() {
       return
     }
 
-    await $fetch('/api/chapters/unlock', {
+    const result = await $fetch<{
+      success: boolean
+      order: {
+        order_no: string
+      }
+    }>('/api/payments/create', {
       method: 'POST',
 
       headers: {
-        Authorization: `Bearer ${session.access_token}`,
+        Authorization:
+            `Bearer ${session.access_token}`,
       },
 
       body: {
         bookSlug: slug,
-        chapterSlug: chapterSlug,
+        chapterSlug,
       },
     })
 
-    await refreshChapterAccess()
+    createdOrderNo.value = result.order.order_no
   } catch (error) {
-    console.error('解鎖章節失敗:', error)
+    console.error('建立訂單失敗:', error)
+    purchaseError.value =
+        '目前無法建立訂單，請稍後再試。'
+  } finally {
+    orderCreating.value = false
   }
 }
-
 async function enableProgressTracking() {
   if (
       !import.meta.client ||
@@ -781,16 +801,45 @@ function decreaseFontSize() {
             class="unlock-button"
             :disabled="
               !paymentAvailable ||
+              orderCreating ||
+              Boolean(createdOrderNo) ||
               Boolean(user && !purchaseConsent)
             "
-            @click="handleUnlock"
+            @click="handlePurchase"
         >
           {{
-            paymentAvailable
-                ? (user ? `測試解鎖 NT$ ${chapter.price}` : '登入並測試解鎖')
-                : '付款功能準備中'
+            orderCreating
+                ? '建立訂單中…'
+                : createdOrderNo
+                    ? '測試訂單已建立'
+                    : paymentAvailable
+                        ? (
+                            user
+                                ? `建立測試訂單 NT$ ${chapter.price}`
+                                : '登入後購買'
+                        )
+                        : '付款功能準備中'
           }}
         </button>
+
+        <p
+            v-if="createdOrderNo"
+            class="purchase-success"
+        >
+          測試訂單已建立：{{ createdOrderNo }}
+
+          <NuxtLink to="/account">
+            前往會員中心查看
+          </NuxtLink>
+        </p>
+
+        <p
+            v-else-if="purchaseError"
+            class="purchase-error"
+            role="alert"
+        >
+          {{ purchaseError }}
+        </p>
       </section>
 
       <!-- 章節導覽 -->
@@ -1127,6 +1176,29 @@ function decreaseFontSize() {
   background: rgba(128, 128, 128, 0.1);
 }
 
+.purchase-success,
+.purchase-error {
+  margin: 20px 0 0;
+
+  font-size: 14px;
+}
+
+.paid-chapter-lock .purchase-success {
+  color: #277443;
+  opacity: 1;
+}
+
+.paid-chapter-lock .purchase-error {
+  color: #b91c1c;
+  opacity: 1;
+}
+
+.purchase-success a {
+  margin-left: 8px;
+
+  color: inherit;
+  font-weight: 700;
+}
 /* -------------------------
    章節導覽
 ------------------------- */
