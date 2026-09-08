@@ -129,6 +129,64 @@ export default defineEventHandler(async (event) => {
     }
 
     /*
+ * 30 分鐘內已有相同待付款訂單時，
+ * 直接沿用，不重複新增。
+ */
+    const pendingOrderCutoff = new Date(
+        Date.now() - 30 * 60 * 1000
+    ).toISOString()
+
+    const {
+        data: existingPendingOrder,
+        error: pendingOrderError,
+    } = await supabaseAdmin
+        .from('orders')
+        .select(`
+    id,
+    order_no,
+    book_slug,
+    chapter_slug,
+    amount,
+    currency,
+    status,
+    created_at
+  `)
+        .eq('user_id', user.id)
+        .eq('book_slug', bookSlug)
+        .eq('chapter_slug', chapterSlug)
+        .eq('amount', chapterPrice)
+        .eq('currency', 'TWD')
+        .eq('status', 'pending')
+        .eq('payment_provider', 'newebpay')
+        .gte('created_at', pendingOrderCutoff)
+        .order('created_at', {
+            ascending: false,
+        })
+        .limit(1)
+        .maybeSingle()
+
+    if (pendingOrderError) {
+        console.error(
+            '檢查待付款訂單失敗:',
+            pendingOrderError
+        )
+
+        throw createError({
+            statusCode: 500,
+            statusMessage:
+                'Failed to check pending order',
+        })
+    }
+
+    if (existingPendingOrder) {
+        return {
+            success: true,
+            reused: true,
+            order: existingPendingOrder,
+        }
+    }
+
+    /*
      * 藍新的 MerchantOrderNo 只能使用英數字，
      * 因此不使用連字號。
      */
@@ -184,6 +242,7 @@ export default defineEventHandler(async (event) => {
 
     return {
         success: true,
+        reused: false,
         order,
     }
 })
