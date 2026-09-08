@@ -32,9 +32,15 @@ type Order = {
   paid_at: string | null
 }
 
+type OrderView = Order & {
+  bookTitle: string
+  chapterTitle: string
+  statusLabel: string
+}
+
 const accessViewList = ref<AccessView[]>([])
 const recentReadings = ref<RecentReading[]>([])
-const orders = ref<Order[]>([])
+const orders = ref<OrderView[]>([])
 
 const {
   user,
@@ -46,6 +52,34 @@ const supabase = useSupabase()
 const accessList = ref<ChapterAccess[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
+
+const ORDER_STATUS_LABELS: Record<string, string> = {
+  pending: '等待付款',
+  paid: '付款成功',
+  failed: '付款失敗',
+  cancelled: '已取消',
+  refunded: '已退款',
+}
+
+function formatOrderAmount(
+    amount: number,
+    currency: string,
+) {
+  return new Intl.NumberFormat('zh-TW', {
+    style: 'currency',
+    currency,
+    maximumFractionDigits: 0,
+  }).format(amount)
+}
+
+function formatOrderDate(value: string) {
+  return new Intl.DateTimeFormat('zh-TW', {
+    timeZone: 'Asia/Taipei',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(value))
+}
 
 async function loadChapterAccess() {
   if (!user.value) {
@@ -141,7 +175,32 @@ async function loadOrders() {
     return
   }
 
-  orders.value = (data ?? []) as Order[]
+  const books = await queryCollection('novelBooks').all()
+  const chapters = await queryCollection('novelChapters').all()
+
+  orders.value = ((data ?? []) as Order[]).map((order) => {
+    const book = books.find(
+        item =>
+            item.stem ===
+            `novels/${order.book_slug}/index`
+    )
+
+    const chapter = chapters.find(
+        item =>
+            item.stem ===
+            `novels/${order.book_slug}/${order.chapter_slug}`
+    )
+
+    return {
+      ...order,
+      bookTitle: book?.title ?? order.book_slug,
+      chapterTitle:
+          chapter?.title ?? order.chapter_slug,
+      statusLabel:
+          ORDER_STATUS_LABELS[order.status] ??
+          order.status,
+    }
+  })
 }
 
 async function loadRecentReadings() {
@@ -481,27 +540,54 @@ watch(
               :key="order.id"
               class="order-card"
           >
+            <!-- 訂單內容 -->
             <div>
               <strong>
                 {{ order.order_no }}
               </strong>
 
               <p>
-                {{ order.book_slug }}／{{ order.chapter_slug }}
+                {{ order.bookTitle }}／{{ order.chapterTitle }}
               </p>
             </div>
 
+            <!-- 金額與狀態 -->
             <div class="order-meta">
               <strong>
-                {{ order.currency }} {{ order.amount }}
+                {{
+                  formatOrderAmount(
+                      order.amount,
+                      order.currency
+                  )
+                }}
               </strong>
 
-              <span>
-          {{ order.status }}
-        </span>
+              <span
+                  class="order-status"
+                  :class="{
+          'order-status--pending':
+            order.status === 'pending',
+          'order-status--paid':
+            order.status === 'paid',
+          'order-status--failed':
+            order.status === 'failed',
+          'order-status--cancelled':
+            order.status === 'cancelled',
+          'order-status--refunded':
+            order.status === 'refunded',
+        }"
+              >
+      {{ order.statusLabel }}
+    </span>
 
-              <time :datetime="order.created_at">
-                {{ new Date(order.created_at).toLocaleDateString('zh-TW') }}
+              <time
+                  :datetime="order.paid_at ?? order.created_at"
+              >
+                {{
+                  order.paid_at
+                      ? `付款日期：${formatOrderDate(order.paid_at)}`
+                      : `建立日期：${formatOrderDate(order.created_at)}`
+                }}
               </time>
             </div>
           </article>
@@ -678,6 +764,37 @@ watch(
 
   font-size: 13px;
   color: #666;
+}
+
+.order-status {
+  display: inline-block;
+
+  padding: 3px 8px;
+
+  border-radius: 999px;
+
+  font-weight: 600;
+}
+
+.order-status--pending {
+  background: #fff7db;
+  color: #846500;
+}
+
+.order-status--paid {
+  background: #e8f6ed;
+  color: #277443;
+}
+
+.order-status--failed,
+.order-status--cancelled {
+  background: #f3f3f3;
+  color: #666;
+}
+
+.order-status--refunded {
+  background: #eaf1fb;
+  color: #315f96;
 }
 
 .empty-message {
