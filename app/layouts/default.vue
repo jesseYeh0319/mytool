@@ -67,6 +67,12 @@ async function signOut() {
 
           <template v-if="initialized">
             <template v-if="user">
+              <NuxtLink
+                  to="/account"
+                  @click="closeMenu"
+              >
+                會員中心
+              </NuxtLink>
               <span class="auth-email">
                 {{ user.email }}
               </span>
