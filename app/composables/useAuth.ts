@@ -8,15 +8,18 @@ export const useAuth = () => {
 
     const loadUser = async () => {
         const {
-            data: { user: currentUser },
+            data: { session },
             error,
-        } = await supabase.auth.getUser()
+        } = await supabase.auth.getSession()
 
         if (error) {
-            console.error('取得登入使用者失敗:', error)
+            console.error('取得登入狀態失敗:', error)
+            user.value = null
+            initialized.value = true
+            return
         }
 
-        user.value = currentUser
+        user.value = session?.user ?? null
         initialized.value = true
     }
 
