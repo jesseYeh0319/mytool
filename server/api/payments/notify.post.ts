@@ -54,9 +54,27 @@ export default defineEventHandler(async (event) => {
             config.newebpayHashKey,
             config.newebpayHashIv,
         )
-    } catch {
-        // 不輸出密文、金鑰或完整付款資料。
-        console.warn('藍新通知 API：驗證或解密失敗')
+    } catch (error: unknown) {
+        let reason = 'DECRYPT_FAILED'
+
+        if (error instanceof SyntaxError) {
+            reason = 'JSON_PARSE_FAILED'
+        } else if (error instanceof Error) {
+            if (error.message === 'Invalid payment payload') {
+                reason = 'INVALID_FORMAT'
+            } else if (
+                error.message === 'Invalid payment signature'
+            ) {
+                reason = 'SIGNATURE_MISMATCH'
+            }
+        }
+
+        // 僅記錄分類，不輸出金鑰、密文或解密內容。
+        console.warn('藍新通知驗證失敗:', {
+            reason,
+            merchantMatches:
+                body.MerchantID === config.newebpayMerchantId,
+        })
 
         throw createError({
             statusCode: 400,
