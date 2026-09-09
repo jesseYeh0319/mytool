@@ -93,10 +93,37 @@ export function verifyAndDecryptNewebpayTrade(
       Buffer.from(hashIv, 'utf8'),
   )
 
-  const decrypted = Buffer.concat([
+// 自行驗證 padding，不使用 Node.js 的自動移除。
+  decipher.setAutoPadding(false)
+
+  const padded = Buffer.concat([
     decipher.update(Buffer.from(tradeInfo, 'hex')),
     decipher.final(),
-  ]).toString('utf8')
+  ])
+
+  const paddingLength = padded[padded.length - 1]
+
+// 相容 16-byte 與 32-byte 補齊方式。
+// 每個尾端 byte 都必須等於 padding 長度。
+  const paddingValid =
+      paddingLength !== undefined &&
+      paddingLength >= 1 &&
+      paddingLength <= 32 &&
+      paddingLength < padded.length &&
+      (paddingLength <= 16 || padded.length % 32 === 0) &&
+      padded
+          .subarray(padded.length - paddingLength)
+          .every(value => value === paddingLength)
+
+  if (!paddingValid) {
+    console.warn('藍新解密：padding 格式不符合預期')
+
+    throw new Error('Invalid payment padding')
+  }
+
+  const decrypted = padded
+      .subarray(0, padded.length - paddingLength)
+      .toString('utf8')
 
   return JSON.parse(decrypted)
 }
