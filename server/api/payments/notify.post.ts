@@ -69,9 +69,17 @@ export default defineEventHandler(async (event) => {
             }
         }
 
-        // 僅記錄分類，不輸出金鑰、密文或解密內容。
+        const cryptoCode =
+            error instanceof Error &&
+            'code' in error &&
+            typeof error.code === 'string' &&
+            /^ERR_[A-Z0-9_]+$/.test(error.code)
+                ? error.code
+                : 'UNAVAILABLE'
+
         console.warn('藍新通知驗證失敗:', {
             reason,
+            cryptoCode,
             merchantMatches:
                 body.MerchantID === config.newebpayMerchantId,
         })
