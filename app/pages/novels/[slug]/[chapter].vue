@@ -481,12 +481,25 @@ async function handlePayment() {
             ? error.statusCode
             : undefined
 
+    const responseMessage = (
+        error as {
+          data?: {
+            data?: {
+              message?: unknown
+            }
+          }
+        } | null
+    )?.data?.data?.message
+
+    purchaseError.value =
+        typeof responseMessage === 'string'
+            ? responseMessage
+            : statusCode === 409
+                ? '訂單已逾期、狀態已變更或章節已解鎖，請確認最新資料。'
+                : '目前無法開啟付款頁，請稍後再試。'
+
     if (statusCode === 409) {
-      purchaseError.value =
-          '此訂單目前無法付款，可能已逾期或章節已解鎖。請重新整理頁面確認。'
-    } else {
-      purchaseError.value =
-          '目前無法開啟付款頁，請稍後再試。'
+      await refreshChapterAccess()
     }
 
     // 不輸出付款表單或加密資料。

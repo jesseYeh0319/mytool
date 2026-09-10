@@ -199,7 +199,7 @@ async function retryPaymentCheck() {
 
     paymentMessage.value =
         statusCode === 429
-            ? '剛剛已查詢過，請稍候最多 30 秒再確認。'
+            ? '剛剛已查詢過，請稍候最多 5 秒再確認。'
             : '目前無法完成藍新查詢或訂單同步，請稍後再試。若已付款，請勿重複付款。'
   } finally {
     if (isCurrent()) {
@@ -357,25 +357,33 @@ async function resumePayment(orderNo: string) {
             ? error.statusCode
             : undefined
 
-    if (statusCode === 409) {
-      resumeError.value = {
-        orderNo,
-        message:
-            '此訂單已逾期或章節已解鎖，無法繼續付款。請重新整理訂單列表。',
-      }
+    const responseMessage = (
+        error as {
+          data?: {
+            data?: {
+              message?: unknown
+            }
+          }
+        } | null
+    )?.data?.data?.message
 
-      // 讓列表狀態與伺服器一致。
-      await loadOrders()
-    } else if (statusCode === 404) {
-      resumeError.value = {
-        orderNo,
-        message: '找不到這筆訂單。',
-      }
-    } else {
-      resumeError.value = {
-        orderNo,
-        message: '目前無法開啟付款頁，請稍後再試。',
-      }
+    resumeError.value = {
+      orderNo,
+      message:
+          typeof responseMessage === 'string'
+              ? responseMessage
+              : statusCode === 404
+                  ? '找不到這筆訂單。'
+                  : statusCode === 409
+                      ? '訂單已逾期、狀態已變更或章節已解鎖，請確認最新資料。'
+                      : '目前無法開啟付款頁，請稍後再試。',
+    }
+
+    if (statusCode === 409) {
+      await Promise.all([
+        loadOrders(),
+        loadChapterAccess(),
+      ])
     }
 
     // 不輸出付款表單或加密資料。
@@ -1349,8 +1357,8 @@ onBeforeUnmount(() => {
                   v-if="canResumePayment(order)"
                   class="order-payment-hint"
               >
-                「繼續付款」會沿用同一筆訂單，不會重複扣款；
-                若你已完成付款，請改按「確認付款狀態」。
+                「繼續付款」會先確認交易狀態。
+                若已完成付款，請按「確認付款狀態」，勿再次付款。
               </p>
 
               <p

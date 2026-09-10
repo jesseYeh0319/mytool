@@ -127,7 +127,7 @@ export default defineEventHandler(async (event) => {
     }
 
     if (queryAllowed !== true) {
-        setResponseHeader(event, 'Retry-After', '30')
+        setResponseHeader(event, 'Retry-After', '5')
 
         throw createError({
             statusCode: 429,

@@ -184,6 +184,121 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  // 先由既有 verify API 向藍新查詢。
+  // 必須轉送登入憑證，不能相信瀏覽器提供的付款狀態。
+  let verification: {
+    status: string
+    message: string
+  }
+
+  try {
+    verification = await $fetch<{
+      status: string
+      message: string
+    }>('/api/payments/verify', {
+      method: 'POST',
+      headers: {
+        Authorization: authorization,
+      },
+      body: { orderNo },
+      timeout: 20000,
+      retry: 0,
+    })
+  } catch (error: unknown) {
+    const fetchError = error as {
+      statusCode?: number
+      response?: { status?: number }
+    } | null
+
+    const statusCode =
+        fetchError?.statusCode ??
+        fetchError?.response?.status
+
+    if (statusCode === 429) {
+      setResponseHeader(event, 'Retry-After', '5')
+
+      throw createError({
+        statusCode: 429,
+        statusMessage: 'Payment query rate limited',
+        data: {
+          message: '剛剛已查詢過付款狀態，請等候 5 秒再試。',
+        },
+      })
+    }
+
+    // 查詢失敗不能當成「沒有付款」。
+    throw createError({
+      statusCode: 503,
+      statusMessage: 'Unable to verify payment',
+      data: {
+        message:
+            '目前無法確認付款狀態，暫時無法開啟付款頁。若已付款，請勿重複付款。',
+      },
+    })
+  }
+
+  // 只有藍新明確回覆查無交易，才允許使用原單號。
+  if (verification?.status !== 'not_found') {
+    let message =
+        '此筆交易需要進一步確認，請聯絡客服並提供訂單編號。'
+
+    if (verification?.status === 'paid') {
+      // verify 已完成付款同步與權限開通。
+      message = '已確認付款成功，請查看已解鎖章節，無須再次付款。'
+    } else if (verification?.status === 'not_paid') {
+      message =
+          `${verification.message} 此單號已有交易紀錄，` +
+          '暫不重新送出付款。請使用原付款頁，或聯絡客服協助。'
+    }
+
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Existing payment transaction',
+      data: { message },
+    })
+  }
+
+  // 查詢期間可能收到付款通知，再確認一次本機訂單。
+  const {
+    data: latestOrder,
+    error: latestOrderError,
+  } = await supabaseAdmin
+      .from('orders')
+      .select('status, amount, currency, payment_provider, created_at')
+      .eq('order_no', orderNo)
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+  if (latestOrderError) {
+    throw createError({
+      statusCode: 503,
+      statusMessage: 'Failed to recheck order',
+      data: {
+        message: '目前無法確認最新訂單狀態，請稍後再試。',
+      },
+    })
+  }
+
+  const latestCreatedAt = Date.parse(latestOrder?.created_at ?? '')
+
+  if (
+      !latestOrder ||
+      latestOrder.status !== 'pending' ||
+      latestOrder.amount !== order.amount ||
+      latestOrder.currency !== order.currency ||
+      latestOrder.payment_provider !== 'newebpay' ||
+      !Number.isFinite(latestCreatedAt) ||
+      Date.now() - latestCreatedAt >= 30 * 60 * 1000
+  ) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Order changed or expired',
+      data: {
+        message: '訂單狀態已變更或超過付款期限，請重新整理後確認。',
+      },
+    })
+  }
+
   const trade = createNewebpayTrade(
       {
         MerchantID: config.newebpayMerchantId,
