@@ -119,6 +119,17 @@ let providerRequestId = 0
 let stopPaymentPolling: (() => void) | undefined
 const openingPaymentCheck = ref(false)
 
+// 與章節頁一致，付款入口目前只開放本機開發環境。
+const paymentAvailable = import.meta.dev
+
+// 正在前往藍新的訂單編號，用來鎖住按鈕避免重複送出。
+const resumingOrderNo = ref('')
+// 記住是「哪一筆」訂單出錯，才不會每張卡片都顯示同一則訊息。
+const resumeError = ref<{
+  orderNo: string
+  message: string
+} | null>(null)
+
 async function retryPaymentCheck() {
   if (
       paymentChecking.value ||
@@ -241,6 +252,139 @@ async function confirmOrderPayment(orderNo: string) {
   }
 }
 
+async function resumePayment(orderNo: string) {
+  if (
+      !paymentAvailable ||
+      resumingOrderNo.value ||
+      openingPaymentCheck.value ||
+      providerChecking.value
+  ) {
+    return
+  }
+
+  resumeError.value = null
+
+  if (!user.value) {
+    await navigateTo({
+      path: '/login',
+      query: { redirect: route.fullPath },
+    })
+
+    return
+  }
+
+  resumingOrderNo.value = orderNo
+
+  try {
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.getSession()
+
+    if (error || !session) {
+      await navigateTo({
+        path: '/login',
+        query: { redirect: route.fullPath },
+      })
+
+      return
+    }
+
+    /*
+     * 只呼叫 prepare，沿用原本的 order_no。
+     * 不呼叫 create，所以不會產生第二筆訂單。
+     */
+    const result = await $fetch<{
+      success: boolean
+      payment: {
+        action: string
+        fields: {
+          MerchantID: string
+          TradeInfo: string
+          TradeSha: string
+          Version: string
+          EncryptType: number
+        }
+      }
+    }>('/api/payments/prepare', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: { orderNo },
+    })
+
+    const testGateway =
+        'https://ccore.newebpay.com/MPG/mpg_gateway'
+
+    if (
+        !result.success ||
+        result.payment.action !== testGateway
+    ) {
+      throw new Error('Invalid payment destination')
+    }
+
+    // 藍新使用表單 POST 接收付款資料。
+    const form = document.createElement('form')
+    form.method = 'POST'
+    form.action = testGateway
+    form.acceptCharset = 'UTF-8'
+    form.hidden = true
+
+    for (
+        const [name, value] of
+        Object.entries(result.payment.fields)
+        ) {
+      const input = document.createElement('input')
+      input.type = 'hidden'
+      input.name = name
+      input.value = String(value)
+      form.appendChild(input)
+    }
+
+    document.body.appendChild(form)
+
+    try {
+      form.submit()
+    } finally {
+      form.remove()
+    }
+  } catch (error: unknown) {
+    const statusCode =
+        error &&
+        typeof error === 'object' &&
+        'statusCode' in error
+            ? error.statusCode
+            : undefined
+
+    if (statusCode === 409) {
+      resumeError.value = {
+        orderNo,
+        message:
+            '此訂單已逾期或章節已解鎖，無法繼續付款。請重新整理訂單列表。',
+      }
+
+      // 讓列表狀態與伺服器一致。
+      await loadOrders()
+    } else if (statusCode === 404) {
+      resumeError.value = {
+        orderNo,
+        message: '找不到這筆訂單。',
+      }
+    } else {
+      resumeError.value = {
+        orderNo,
+        message: '目前無法開啟付款頁，請稍後再試。',
+      }
+    }
+
+    // 不輸出付款表單或加密資料。
+    console.error('繼續付款失敗')
+  } finally {
+    resumingOrderNo.value = ''
+  }
+}
+
 const paymentOrderNo = computed(() => {
   const value = route.query.paymentOrder
 
@@ -260,6 +404,22 @@ const ORDER_STATUS_LABELS: Record<string, string> = {
   failed: '付款失敗',
   cancelled: '已取消',
   refunded: '已退款',
+}
+
+// 與 create / prepare API 的 30 分鐘期限一致。
+const PENDING_ORDER_TTL = 30 * 60 * 1000
+
+function canResumePayment(order: OrderView) {
+  if (!paymentAvailable || order.status !== 'pending') {
+    return false
+  }
+
+  const createdAt = Date.parse(order.created_at)
+
+  return (
+      Number.isFinite(createdAt) &&
+      Date.now() - createdAt < PENDING_ORDER_TTL
+  )
 }
 
 function formatOrderAmount(
@@ -1143,16 +1303,32 @@ onBeforeUnmount(() => {
                   v-if="order.status === 'pending'"
                   class="order-actions"
               >
-                <NuxtLink
-                    :to="`/novels/${encodeURIComponent(order.book_slug)}/${encodeURIComponent(order.chapter_slug)}`"
+                <button
+                    v-if="canResumePayment(order)"
+                    type="button"
+                    class="order-resume-button"
+                    :disabled="
+                      Boolean(resumingOrderNo) ||
+                      openingPaymentCheck ||
+                      providerChecking
+                    "
+                    @click="resumePayment(order.order_no)"
                 >
-                  前往章節
-                </NuxtLink>
+                  {{
+                    resumingOrderNo === order.order_no
+                        ? '前往藍新中…'
+                        : '繼續付款'
+                  }}
+                </button>
 
                 <button
                     type="button"
                     class="order-check-button"
-                    :disabled="openingPaymentCheck || providerChecking"
+                    :disabled="
+                      openingPaymentCheck ||
+                      providerChecking ||
+                      Boolean(resumingOrderNo)
+                    "
                     @click="confirmOrderPayment(order.order_no)"
                 >
                   {{
@@ -1162,13 +1338,38 @@ onBeforeUnmount(() => {
                         : '確認付款狀態'
                   }}
                 </button>
-              </div>
 
+                <NuxtLink
+                    :to="`/novels/${encodeURIComponent(order.book_slug)}/${encodeURIComponent(order.chapter_slug)}`"
+                >
+                  前往章節
+                </NuxtLink>
+              </div>
               <p
-                  v-if="order.status === 'pending'"
+                  v-if="canResumePayment(order)"
                   class="order-payment-hint"
               >
-                若已完成付款，請先確認付款狀態，勿重複付款。
+                「繼續付款」會沿用同一筆訂單，不會重複扣款；
+                若你已完成付款，請改按「確認付款狀態」。
+              </p>
+
+              <p
+                  v-if="
+                    order.status === 'pending' &&
+                    paymentAvailable &&
+                    !canResumePayment(order)
+                  "
+                  class="order-payment-hint"
+              >
+                此訂單已超過 30 分鐘付款期限，請回章節頁重新購買。
+              </p>
+
+              <p
+                  v-if="resumeError?.orderNo === order.order_no"
+                  class="order-payment-error"
+                  role="alert"
+              >
+                {{ resumeError.message }}
               </p>
 
             </div>
@@ -1491,33 +1692,69 @@ onBeforeUnmount(() => {
 .order-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 16px;
+  align-items: center;
+  gap: 8px;
   margin-top: 12px;
 }
 
-.order-actions a {
-  color: #245a91;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.order-card .order-payment-hint {
-  margin-top: 8px;
-  font-size: 13px;
-}
-
-.payment-retry-button {
-  padding: 8px 14px;
-  border: 1px solid #aaa;
+/*
+ * 動作列三顆一致，採用 Bootstrap 5 .btn-primary 的數值。
+ *
+ * 錯誤狀態的「重新載入」共用 .order-check-button，
+ * 那裡要維持純連結樣式，所以必須加上父層限定。
+ */
+.order-actions a,
+.order-actions .order-check-button,
+.order-actions .order-resume-button {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 6px 12px;
+  border: 1px solid #0d6efd;
   border-radius: 6px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
+  background: #0d6efd;
+  color: #fff;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  text-align: center;
+  text-decoration: none;
   cursor: pointer;
+  transition:
+      color 0.15s ease-in-out,
+      background-color 0.15s ease-in-out,
+      border-color 0.15s ease-in-out,
+      box-shadow 0.15s ease-in-out;
 }
 
-.payment-retry-button:disabled {
-  opacity: 0.6;
+.order-actions a:hover,
+.order-actions .order-check-button:not(:disabled):hover,
+.order-actions .order-resume-button:not(:disabled):hover {
+  background: #0b5ed7;
+  border-color: #0a58ca;
+  color: #fff;
+}
+
+.order-actions a:active,
+.order-actions .order-check-button:not(:disabled):active,
+.order-actions .order-resume-button:not(:disabled):active {
+  background: #0a58ca;
+  border-color: #0a53be;
+}
+
+/* Bootstrap 用 box-shadow 光暈取代 outline。 */
+.order-actions a:focus-visible,
+.order-actions .order-check-button:focus-visible,
+.order-actions .order-resume-button:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 0 4px rgba(49, 132, 253, 0.5);
+}
+
+.order-actions .order-check-button:disabled,
+.order-actions .order-resume-button:disabled {
+  opacity: 0.65;
   cursor: not-allowed;
 }
 
@@ -1532,9 +1769,21 @@ onBeforeUnmount(() => {
   cursor: pointer;
 }
 
-.order-check-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+.order-resume-button {
+  padding: 8px 14px;
+  border: 1px solid #245a91;
+  border-radius: 6px;
+  background: #245a91;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.order-payment-error {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #a4262c;
+  overflow-wrap: anywhere;
 }
 
 .order-filters {
@@ -1546,7 +1795,9 @@ onBeforeUnmount(() => {
 
 .order-filters button,
 .order-pagination button {
-  padding: 8px 12px;
+  box-sizing: border-box;
+  min-height: 36px;
+  padding: 0 12px;
   border: 1px solid #ccc;
   border-radius: 6px;
   background: transparent;
@@ -1636,6 +1887,14 @@ onBeforeUnmount(() => {
 
 .order-copy-message:empty {
   margin: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .order-actions a,
+  .order-actions .order-check-button,
+  .order-actions .order-resume-button {
+    transition: none;
+  }
 }
 
 </style>
