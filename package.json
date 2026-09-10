@@ -7,7 +7,8 @@
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "new:tech": "node scripts/new-tech.mjs"
+    "new:tech": "node scripts/new-tech.mjs",
+    "new:chapter": "node --env-file=.env scripts/new-chapter.mjs"
   },
   "dependencies": {
     "@nuxt/content": "^3.15.2",
