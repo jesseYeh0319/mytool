@@ -1,4 +1,23 @@
 <script setup lang="ts">
+
+const orderCopyMessage = ref('')
+let orderCopyRequestId = 0
+
+async function copyOrderNumber(orderNo: string) {
+  const requestId = ++orderCopyRequestId
+  orderCopyMessage.value = ''
+
+  try {
+    await navigator.clipboard.writeText(orderNo)
+
+    if (requestId !== orderCopyRequestId) return
+    orderCopyMessage.value = `已複製訂單編號：${orderNo}`
+  } catch {
+    if (requestId !== orderCopyRequestId) return
+    orderCopyMessage.value = '無法自動複製，請展開訂單明細，手動選取訂單編號複製。'
+  }
+}
+
 type ChapterAccess = {
   id: number
   book_slug: string
@@ -1017,6 +1036,15 @@ onBeforeUnmount(() => {
       <section class="orders-section">
         <h2>訂單紀錄</h2>
 
+        <p
+            class="order-copy-message"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+        >
+          {{ orderCopyMessage }}
+        </p>
+
         <div
             class="order-filters"
             role="group"
@@ -1079,7 +1107,18 @@ onBeforeUnmount(() => {
 
                 <dl>
                   <dt>訂單編號</dt>
-                  <dd>{{ order.order_no }}</dd>
+                  <dd>
+                    <span>{{ order.order_no }}</span>
+
+                    <button
+                        type="button"
+                        class="order-copy-button"
+                        :aria-label="`複製訂單編號 ${order.order_no}`"
+                        @click="copyOrderNumber(order.order_no)"
+                    >
+                      複製
+                    </button>
+                  </dd>
 
                   <dt>購買內容</dt>
                   <dd>{{ order.bookTitle }}／{{ order.chapterTitle }}</dd>
@@ -1572,6 +1611,31 @@ onBeforeUnmount(() => {
 .order-details dd {
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+.order-copy-button {
+  margin-left: 8px;
+  padding: 3px 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.order-copy-button:focus-visible {
+  outline: 2px solid #245a91;
+  outline-offset: 3px;
+}
+
+.order-copy-message {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.order-copy-message:empty {
+  margin: 0;
 }
 
 </style>
