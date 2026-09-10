@@ -1074,6 +1074,32 @@ onBeforeUnmount(() => {
                 {{ order.bookTitle }}／{{ order.chapterTitle }}
               </p>
 
+              <details class="order-details">
+                <summary>查看訂單明細</summary>
+
+                <dl>
+                  <dt>訂單編號</dt>
+                  <dd>{{ order.order_no }}</dd>
+
+                  <dt>購買內容</dt>
+                  <dd>{{ order.bookTitle }}／{{ order.chapterTitle }}</dd>
+
+                  <dt>訂單金額</dt>
+                  <dd>{{ formatOrderAmount(order.amount, order.currency) }}</dd>
+
+                  <dt>訂單狀態</dt>
+                  <dd>{{ order.statusLabel }}</dd>
+
+                  <dt>建立日期</dt>
+                  <dd>{{ formatOrderDate(order.created_at) }}</dd>
+
+                  <dt>付款日期</dt>
+                  <dd>
+                    {{ order.paid_at ? formatOrderDate(order.paid_at) : '尚無付款紀錄' }}
+                  </dd>
+                </dl>
+              </details>
+
               <div
                   v-if="order.status === 'pending'"
                   class="order-actions"
@@ -1515,6 +1541,37 @@ onBeforeUnmount(() => {
 .order-pagination button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.order-details {
+  margin-top: 12px;
+}
+
+.order-details summary {
+  cursor: pointer;
+  width: fit-content;
+}
+
+.order-details summary:focus-visible {
+  outline: 2px solid #245a91;
+  outline-offset: 3px;
+}
+
+.order-details dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px 12px;
+  margin: 12px 0;
+  font-size: 14px;
+}
+
+.order-details dt {
+  font-weight: 600;
+}
+
+.order-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 </style>
