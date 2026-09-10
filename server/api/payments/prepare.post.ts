@@ -195,7 +195,18 @@ export default defineEventHandler(async (event) => {
         Amt: order.amount,
         ItemDesc: 'MYBB 小說章節閱讀權限',
 
+        //加入付款返回網址
         NotifyURL: notifyUrl.toString(),
+
+        ReturnURL: new URL(
+            '/api/payments/return',
+            notifyUrl.origin,
+        ).toString(),
+
+        ClientBackURL: new URL(
+            '/account',
+            notifyUrl.origin,
+        ).toString(),
 
         // 目前通知 API 只支援一般信用卡付款。
         CREDIT: 1,
