@@ -12,6 +12,34 @@ const {
   getReadingProgressFromCloud,
 } = useReadingProgress()
 
+const {
+  getBookAccess,
+} = useChapterAccess()
+
+// 這本書已購買的章節 slug。
+const ownedChapters = ref<Set<string>>(new Set())
+
+function chapterSlugOf(path: string) {
+  return path.split('/').pop() ?? ''
+}
+
+function isOwned(chapterPath: string) {
+  return ownedChapters.value.has(chapterSlugOf(chapterPath))
+}
+
+async function loadOwnedChapters() {
+  if (
+      !import.meta.client ||
+      !initialized.value ||
+      !user.value
+  ) {
+    ownedChapters.value = new Set()
+    return
+  }
+
+  ownedChapters.value = await getBookAccess(slug)
+}
+
 interface NovelProgress {
   chapter: string
   chapterTitle: string
@@ -130,6 +158,7 @@ async function loadReadingProgress() {
 
 onMounted(() => {
   void loadReadingProgress()
+  void loadOwnedChapters()
 })
 
 watch(
@@ -137,10 +166,12 @@ watch(
     ([authInitialized]) => {
       if (authInitialized && import.meta.client) {
         void loadReadingProgress()
+        void loadOwnedChapters()
       }
     },
     { flush: 'post' }
 )
+
 const { data: book } = await useAsyncData(
     `novel-book-${slug}`,
     () => {
@@ -225,7 +256,11 @@ const { data: chapters } = await useAsyncData(
             :to="chapter.path"
             :class="[
               'chapter-item',
-              { 'chapter-item--paid': chapter.isFree === false }
+              {
+                'chapter-item--paid':
+                    chapter.isFree === false &&
+                    !isOwned(chapter.path)
+              }
             ]"
         >
           <div>
@@ -243,6 +278,13 @@ const { data: chapters } = await useAsyncData(
               class="chapter-status chapter-status--free"
           >
             免費
+          </span>
+
+          <span
+              v-else-if="isOwned(chapter.path)"
+              class="chapter-status chapter-status--owned"
+          >
+            已購買
           </span>
 
           <span
@@ -443,6 +485,11 @@ const { data: chapters } = await useAsyncData(
 .chapter-status--paid {
   background: #f3ece3;
   color: #79572f;
+}
+
+.chapter-status--owned {
+  background: #e8eff7;
+  color: #245a91;
 }
 
 @media (max-width: 768px) {
