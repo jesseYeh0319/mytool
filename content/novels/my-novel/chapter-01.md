@@ -1,6 +1,6 @@
 ---
 title: 開始
-novel: 我的第一本小說
+novel: my-novel
 chapter: 1
 date: 2026-08-25
 isFree: true
