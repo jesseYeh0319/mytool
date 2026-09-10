@@ -1,7 +1,14 @@
 export default defineEventHandler((event) => {
     setResponseHeader(event, 'Cache-Control', 'no-store')
 
-    // 此路由只負責返回網站。
-    // 付款狀態與閱讀權限由 notify API 更新。
-    return sendRedirect(event, '/account', 303)
+    const orderNo = getQuery(event).order
+
+    const destination =
+        typeof orderNo === 'string' &&
+        /^[A-Za-z0-9]{1,30}$/.test(orderNo)
+            ? `/account?paymentOrder=${encodeURIComponent(orderNo)}`
+            : '/account'
+
+    // 僅轉址，不根據返回資料開通權限。
+    return sendRedirect(event, destination, 303)
 })

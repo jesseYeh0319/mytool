@@ -199,7 +199,7 @@ export default defineEventHandler(async (event) => {
         NotifyURL: notifyUrl.toString(),
 
         ReturnURL: new URL(
-            '/api/payments/return',
+            `/api/payments/return?order=${encodeURIComponent(order.order_no)}`,
             notifyUrl.origin,
         ).toString(),
 

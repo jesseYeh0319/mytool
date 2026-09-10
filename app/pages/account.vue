@@ -48,6 +48,19 @@ const {
 } = useAuth()
 
 const supabase = useSupabase()
+const route = useRoute()
+const paymentMessage = ref('')
+const paymentReadPath = ref('')
+const paymentChecking = ref(false)
+
+const paymentOrderNo = computed(() => {
+  const value = route.query.paymentOrder
+
+  return typeof value === 'string' &&
+  /^[A-Za-z0-9]{1,30}$/.test(value)
+      ? value
+      : ''
+})
 
 const accessList = ref<ChapterAccess[]>([])
 const loading = ref(false)
@@ -396,6 +409,139 @@ watch(
       immediate: true,
     }
 )
+
+watch(
+    [initialized, () => user.value?.id, paymentOrderNo],
+    ([ready, userId, orderNo], _, onCleanup) => {
+      paymentMessage.value = ''
+      paymentReadPath.value = ''
+      paymentChecking.value = false
+
+      if (
+          !import.meta.client ||
+          !ready ||
+          !userId ||
+          !orderNo
+      ) {
+        return
+      }
+
+      let stopped = false
+      let attempts = 0
+      let timer: ReturnType<typeof setTimeout> | undefined
+
+      const controller = new AbortController()
+
+      // 離開頁面、登出或切換訂單時停止查詢。
+      onCleanup(() => {
+        stopped = true
+        controller.abort()
+        clearTimeout(timer)
+      })
+
+      paymentChecking.value = true
+      paymentMessage.value = '正在確認付款結果，請稍候…'
+
+      async function checkPayment() {
+        attempts += 1
+
+        try {
+          const { data: order, error } = await supabase
+              .from('orders')
+              .select('status, book_slug, chapter_slug')
+              .eq('order_no', orderNo)
+              .eq('user_id', userId)
+              .abortSignal(controller.signal)
+              .maybeSingle()
+
+          if (stopped) return
+
+          if (error) {
+            throw new Error('Order query failed')
+          }
+
+          if (!order) {
+            paymentChecking.value = false
+            paymentMessage.value =
+                '此帳號找不到這筆訂單，請確認是否登入購買時的帳號。'
+            return
+          }
+
+          if (order.status === 'paid') {
+            const { data: access, error: accessError } =
+                await supabase
+                    .from('chapter_access')
+                    .select('id')
+                    .eq('user_id', userId)
+                    .eq('book_slug', order.book_slug)
+                    .eq('chapter_slug', order.chapter_slug)
+                    .limit(1)
+                    .abortSignal(controller.signal)
+                    .maybeSingle()
+
+            if (stopped) return
+
+            if (accessError) {
+              throw new Error('Access query failed')
+            }
+
+            if (access) {
+              // 同步更新下面的訂單與已解鎖章節區塊。
+              await Promise.all([
+                loadOrders(),
+                loadChapterAccess(),
+              ])
+
+              if (stopped) return
+
+              paymentChecking.value = false
+              paymentMessage.value = '付款成功，章節已解鎖。'
+              paymentReadPath.value =
+                  `/novels/${encodeURIComponent(order.book_slug)}` +
+                  `/${encodeURIComponent(order.chapter_slug)}`
+              return
+            }
+          }
+
+          if (
+              order.status === 'failed' ||
+              order.status === 'refunded'
+          ) {
+            paymentChecking.value = false
+            paymentMessage.value =
+                order.status === 'refunded'
+                    ? '此訂單已退款，請查看訂單紀錄。'
+                    : '此訂單顯示付款失敗；若有扣款疑慮，請聯絡客服。'
+
+            await loadOrders()
+            return
+          }
+
+          // pending、已逾時取消，或已付款但權限尚未查到：
+          // 保留短暫等待通知完成的機會。
+          if (attempts >= 15) {
+            paymentChecking.value = false
+            paymentMessage.value =
+                '暫時尚未確認付款與開通結果。若已付款，請勿重複付款，可稍後重新整理或聯絡客服。'
+            return
+          }
+
+          timer = setTimeout(() => {
+            void checkPayment()
+          }, 2000)
+        } catch {
+          if (stopped) return
+
+          paymentChecking.value = false
+          paymentMessage.value =
+              '目前無法查詢付款結果，請稍後重新整理。若已付款，請勿重複付款。'
+        }
+      }
+
+      void checkPayment()
+    },
+    { immediate: true },
+)
 </script>
 
 <template>
@@ -417,7 +563,10 @@ watch(
       </p>
 
       <NuxtLink
-          to="/login?redirect=/account"
+          :to="{
+            path: '/login',
+            query: { redirect: route.fullPath },
+          }"
           class="primary-link"
       >
         前往登入
@@ -426,6 +575,23 @@ watch(
 
     <!-- 已登入 -->
     <div v-else>
+      <section
+          v-if="paymentMessage"
+          class="payment-feedback"
+          role="status"
+          aria-live="polite"
+          :aria-busy="paymentChecking"
+      >
+        <p>{{ paymentMessage }}</p>
+
+        <NuxtLink
+            v-if="paymentReadPath"
+            :to="paymentReadPath"
+            class="primary-link"
+        >
+          前往閱讀
+        </NuxtLink>
+      </section>
       <section class="account-info">
         <h2>帳號</h2>
 
@@ -836,5 +1002,16 @@ watch(
   .order-meta {
     align-items: flex-start;
   }
+}
+
+.payment-feedback {
+  margin-bottom: 24px;
+  padding: 16px;
+  border: 1px solid #ccc;
+  border-radius: 10px;
+}
+
+.payment-feedback p {
+  margin: 0 0 8px;
 }
 </style>
