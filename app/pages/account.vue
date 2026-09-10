@@ -42,6 +42,46 @@ const accessViewList = ref<AccessView[]>([])
 const recentReadings = ref<RecentReading[]>([])
 const orders = ref<OrderView[]>([])
 
+type OrderFilter = 'all' | 'pending' | 'paid' | 'other'
+
+const orderFilter = ref<OrderFilter>('all')
+
+const orderFilterOptions: {
+  value: OrderFilter
+  label: string
+}[] = [
+  { value: 'all', label: '全部' },
+  { value: 'pending', label: '待付款' },
+  { value: 'paid', label: '已付款' },
+  { value: 'other', label: '其他狀態' },
+]
+
+function matchesOrderFilter(
+    order: OrderView,
+    filter: OrderFilter,
+) {
+  if (filter === 'all') return true
+
+  if (filter === 'other') {
+    return order.status !== 'pending' &&
+        order.status !== 'paid'
+  }
+
+  return order.status === filter
+}
+
+const filteredOrders = computed(() =>
+    orders.value.filter(order =>
+        matchesOrderFilter(order, orderFilter.value),
+    ),
+)
+
+function orderCount(filter: OrderFilter) {
+  return orders.value.filter(order =>
+      matchesOrderFilter(order, filter),
+  ).length
+}
+
 const {
   user,
   initialized,
@@ -861,11 +901,33 @@ onBeforeUnmount(() => {
       <section class="orders-section">
         <h2>訂單紀錄</h2>
 
-        <p
-            v-if="orders.length === 0"
-            class="empty-message"
+        <div
+            v-if="orders.length > 0"
+            class="order-filters"
+            role="group"
+            aria-label="篩選訂單狀態"
         >
-          目前還沒有訂單紀錄。
+          <button
+              v-for="option in orderFilterOptions"
+              :key="option.value"
+              type="button"
+              :aria-pressed="orderFilter === option.value"
+              @click="orderFilter = option.value"
+          >
+            {{ option.label }}（{{ orderCount(option.value) }}）
+          </button>
+        </div>
+
+        <p
+            v-if="filteredOrders.length === 0"
+            class="empty-message"
+            role="status"
+        >
+          {{
+            orders.length === 0
+                ? '目前還沒有訂單紀錄。'
+                : '目前沒有符合此狀態的訂單。'
+          }}
         </p>
 
         <div
@@ -873,7 +935,7 @@ onBeforeUnmount(() => {
             class="order-list"
         >
           <article
-              v-for="order in orders"
+              v-for="order in filteredOrders"
               :key="order.id"
               class="order-card"
           >
@@ -1260,6 +1322,34 @@ onBeforeUnmount(() => {
 .order-check-button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.order-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.order-filters button {
+  padding: 8px 12px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.order-filters button[aria-pressed="true"] {
+  border-color: #222;
+  background: #222;
+  color: #fff;
+}
+
+.order-filters button:focus-visible {
+  outline: 2px solid #245a91;
+  outline-offset: 3px;
 }
 
 </style>
