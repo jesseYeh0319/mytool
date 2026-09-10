@@ -9,10 +9,14 @@ const {
 } = useAuth()
 
 const supabase = useSupabase()
+const route = useRoute()
 
 function closeMenu() {
   menuOpen.value = false
 }
+
+// 換頁後收合選單，避免手機上蓋住新頁面的內容。
+watch(() => route.fullPath, closeMenu)
 
 async function signOut() {
   const { error } = await supabase.auth.signOut()
@@ -38,16 +42,22 @@ async function signOut() {
         <button
             class="menu-button"
             type="button"
-            aria-label="開啟導覽選單"
+            :aria-label="menuOpen ? '關閉導覽選單' : '開啟導覽選單'"
+            :aria-expanded="menuOpen"
+            aria-controls="site-nav-links"
             @click="menuOpen = !menuOpen"
         >
-          ☰
+          <span aria-hidden="true">
+            {{ menuOpen ? '✕' : '☰' }}
+          </span>
         </button>
 
         <!-- 導覽連結 -->
         <div
+            id="site-nav-links"
             class="nav-links"
             :class="{ open: menuOpen }"
+            @keydown.esc="closeMenu"
         >
           <NuxtLink to="/" @click="closeMenu">
             首頁
@@ -194,8 +204,16 @@ async function signOut() {
 }
 
 .auth-email {
+  min-width: 0;
+  max-width: 200px;
+
   font-size: 14px;
   color: #666;
+
+  /* 長信箱在桌機截斷，不要把導覽列撐開。 */
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .auth-button {
@@ -217,10 +235,21 @@ async function signOut() {
 .menu-button {
   display: none;
 
+  /* 44px 是觸控目標的最小建議尺寸。 */
+  min-width: 44px;
+  min-height: 44px;
+
+  align-items: center;
+  justify-content: center;
+
+  margin-right: -10px;
+  padding: 0;
+
   border: 0;
   background: transparent;
+  color: inherit;
 
-  font-size: 28px;
+  font-size: 26px;
   line-height: 1;
 
   cursor: pointer;
@@ -305,7 +334,7 @@ async function signOut() {
   }
 
   .menu-button {
-    display: block;
+    display: inline-flex;
   }
 
   .nav-links {
@@ -316,31 +345,66 @@ async function signOut() {
     left: 0;
     right: 0;
 
-    padding: 16px 20px;
+    padding: 8px 20px 16px;
 
     flex-direction: column;
-    align-items: flex-start;
-    gap: 16px;
+    align-items: stretch;
+    gap: 0;
 
     background: white;
     border-bottom: 1px solid #e5e5e5;
+
+    /*
+     * 選單比視窗高時自己捲動，
+     * 而不是把項目推到畫面外。
+     */
+    max-height: calc(100dvh - 100%);
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   .nav-links.open {
     display: flex;
   }
 
-  .nav-links a {
+  /* 手機上每個項目都撐成一整列，方便單手點擊。 */
+  .nav-links a,
+  .auth-button {
+    display: flex;
+    align-items: center;
+
     width: 100%;
+    min-height: 48px;
+
+    padding: 0;
+
+    border-bottom: 1px solid #f0f0f0;
   }
 
-  .auth-email {
-    width: 100%;
+  .nav-links a.router-link-exact-active {
+    border-bottom-color: #111;
   }
 
   .auth-button {
-    width: 100%;
+    justify-content: flex-start;
     text-align: left;
+  }
+
+  /*
+   * 帳號資訊不是可點擊項目，
+   * 縮小並改為換行，跟連結區隔開。
+   */
+  .auth-email {
+    width: 100%;
+    max-width: 100%;
+
+    padding: 10px 0 4px;
+
+    font-size: 13px;
+
+    white-space: normal;
+    overflow: visible;
+    overflow-wrap: anywhere;
   }
 
   .page-container {

@@ -1760,6 +1760,25 @@ onBeforeUnmount(() => {
   color: #666;
 }
 
+/*
+ * flex 子項預設 min-width: auto，
+ * 長書名會把卡片撐破而不是換行。
+ */
+.recent-card > div:first-child,
+.access-card > div:first-child,
+.order-card > div:first-child {
+  min-width: 0;
+}
+
+.recent-card strong,
+.recent-card p,
+.access-card strong,
+.access-card p,
+.order-card strong,
+.order-card p {
+  overflow-wrap: anywhere;
+}
+
 .progress-info {
   width: 150px;
   flex-shrink: 0;
@@ -1886,33 +1905,6 @@ onBeforeUnmount(() => {
 
 .error-message {
   color: #b91c1c;
-}
-
-@media (max-width: 600px) {
-  .account-page h1 {
-    font-size: 28px;
-  }
-
-  .recent-card,
-  .access-card {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .progress-info {
-    width: 100%;
-  }
-
-  .order-card {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .order-meta {
-    align-items: flex-start;
-  }
 }
 
 .payment-feedback {
@@ -2209,6 +2201,93 @@ onBeforeUnmount(() => {
 
 .order-copy-message:empty {
   margin: 0;
+}
+
+/* 斷點與網站其他頁面一致，改用 768px。 */
+@media (max-width: 768px) {
+  .account-page h1 {
+    font-size: 28px;
+  }
+
+  .recent-card,
+  .access-card {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .progress-info {
+    width: 100%;
+  }
+
+  .order-card {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /*
+   * 直排後金額與狀態改成同一列，
+   * 不要各佔一行浪費高度。
+   */
+  .order-meta {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+  }
+
+  /* 訂單編號沒有空白可斷行，必須強制斷。 */
+  .order-card > div:first-child > strong {
+    display: block;
+    overflow-wrap: anywhere;
+  }
+
+  /* 動作按鈕平分寬度，各自都夠大好按。 */
+  .order-actions a,
+  .order-actions .order-check-button,
+  .order-actions .order-resume-button {
+    flex: 1 1 140px;
+    justify-content: center;
+  }
+
+  .order-details dl {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .order-details dd {
+    margin-bottom: 10px;
+  }
+
+  .order-details dd:last-child {
+    margin-bottom: 0;
+  }
+
+  /*
+   * 訂單編號很長又不能斷字，
+   * 讓複製鍵獨立成一行，不要被擠到畫面外。
+   */
+  .order-copy-button {
+    display: block;
+    margin: 6px 0 0;
+  }
+
+  .bookmark-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .bookmark-actions a,
+  .bookmark-delete-button {
+    flex: 1 1 120px;
+    justify-content: center;
+  }
+
+  .order-filters,
+  .order-pagination {
+    gap: 8px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

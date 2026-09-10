@@ -1784,64 +1784,6 @@ watch(
    手機
 ------------------------- */
 
-@media (max-width: 768px) {
-  .paid-chapter-lock .delivery-note {
-    max-width: 100%;
-    text-align: left;
-  }
-
-  .reader-wrapper {
-    margin-top: -24px;
-
-    padding-top: 24px;
-    padding-bottom: 60px;
-  }
-
-  .reader-toolbar {
-    align-items: flex-start;
-
-    flex-direction: column;
-  }
-
-  .reader-header {
-    padding: 24px 0 36px;
-  }
-
-  .reader-header h1 {
-    font-size: 30px;
-  }
-
-  .novel-content {
-    padding: 40px 0;
-
-    line-height: 2;
-  }
-
-  .chapter-navigation {
-    grid-template-columns:
-      1fr 1fr;
-  }
-
-  .directory-button {
-    grid-column: 1 / -1;
-    grid-row: 1;
-
-    width: 100%;
-
-    box-sizing: border-box;
-  }
-
-  .navigation-left {
-    grid-column: 1;
-    grid-row: 2;
-  }
-
-  .navigation-right {
-    grid-column: 2;
-    grid-row: 2;
-  }
-}
-
 .bookmark-tools {
   position: fixed;
   right: 16px;
@@ -1869,6 +1811,10 @@ watch(
   padding: 16px;
   max-height: 65dvh;
   overflow-y: auto;
+
+  /* 面板捲到底時不要接著捲動底下的正文。 */
+  overscroll-behavior: contain;
+
   box-shadow: 0 4px 20px rgb(0 0 0 / 15%);
 }
 
@@ -1929,4 +1875,132 @@ watch(
   border-color: #666;
 }
 
+@media (max-width: 768px) {
+  .paid-chapter-lock .delivery-note {
+    max-width: 100%;
+    text-align: left;
+  }
+
+  .reader-wrapper {
+    margin-top: -24px;
+
+    padding-top: 24px;
+
+    /*
+     * 底部留出浮動書籤按鈕的高度，
+     * 讓正文最後一行能捲到按鈕上方。
+     */
+    padding-bottom: calc(
+        104px + env(safe-area-inset-bottom, 0px)
+    );
+  }
+
+  /*
+   * 兩組控制各佔一整列、按鈕平分寬度。
+   * 直向排列會吃掉太多首屏高度，
+   * 擠成一列又會讓按鈕小到不好按。
+   */
+  .reader-toolbar {
+    align-items: stretch;
+
+    flex-wrap: wrap;
+    gap: 10px;
+
+    padding: 8px 0 20px;
+  }
+
+  .font-control,
+  .mode-control {
+    flex: 1 1 100%;
+  }
+
+  .reader-toolbar button {
+    flex: 1 1 0;
+
+    min-height: 44px;
+  }
+
+  .reader-header {
+    padding: 24px 0 36px;
+  }
+
+  .reader-header h1 {
+    font-size: 30px;
+  }
+
+  .novel-content {
+    padding: 40px 0;
+
+    line-height: 2;
+  }
+
+  .chapter-navigation {
+    grid-template-columns:
+      1fr 1fr;
+  }
+
+  .directory-button {
+    grid-column: 1 / -1;
+    grid-row: 1;
+
+    width: 100%;
+
+    box-sizing: border-box;
+  }
+
+  .navigation-left {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .navigation-right {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  /* 上下章各自填滿半格，避免變成兩顆難點的小按鈕。 */
+  .navigation-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    width: 100%;
+    min-height: 44px;
+
+    box-sizing: border-box;
+  }
+
+  /*
+   * 浮動書籤改為貼齊左右邊界。
+   * 展開後像底部面板，收合時只有右下角一顆按鈕。
+   */
+  .bookmark-tools {
+    left: 12px;
+    right: 12px;
+
+    width: auto;
+
+    align-items: stretch;
+  }
+
+  .bookmark-tools > button {
+    align-self: flex-end;
+
+    min-height: 44px;
+  }
+
+  .bookmark-message {
+    align-self: flex-end;
+
+    max-width: 100%;
+  }
+
+  /*
+   * 鍵盤升起時視窗高度會縮小，
+   * dvh 會跟著變，面板仍留在可視範圍內。
+   */
+  .bookmark-panel {
+    max-height: 55dvh;
+  }
+}
 </style>
