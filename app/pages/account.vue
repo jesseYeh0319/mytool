@@ -108,6 +108,23 @@ const {
   initialized,
 } = useAuth()
 
+const {
+  listBookmarks,
+  deleteBookmark,
+} = useReadingBookmarks()
+
+type BookmarkView = ReadingBookmark & {
+  bookTitle: string
+  chapterTitle: string
+}
+
+const bookmarks = ref<BookmarkView[]>([])
+const bookmarksLoading = ref(false)
+const bookmarksError = ref('')
+const deletingBookmarkId = ref('')
+
+let bookmarksRequestId = 0
+
 const supabase = useSupabase()
 const route = useRoute()
 const paymentMessage = ref('')
@@ -448,6 +465,118 @@ function formatOrderDate(value: string) {
     month: '2-digit',
     day: '2-digit',
   }).format(new Date(value))
+}
+
+async function loadBookmarks() {
+  const requestId = ++bookmarksRequestId
+  const userId = user.value?.id
+
+  bookmarks.value = []
+  bookmarksError.value = ''
+
+  if (!import.meta.client || !userId) {
+    bookmarksLoading.value = false
+    return
+  }
+
+  bookmarksLoading.value = true
+
+  // 請求回來時若已切換帳號或有更新的請求，就丟棄結果。
+  const isCurrent = () =>
+      requestId === bookmarksRequestId &&
+      user.value?.id === userId
+
+  try {
+    const { bookmarks: rows, error } = await listBookmarks()
+
+    if (!isCurrent()) return
+
+    if (error || !rows) {
+      bookmarksError.value = '無法取得閱讀書籤'
+      return
+    }
+
+    const books = await queryCollection('novelBooks').all()
+    const chapters = await queryCollection('novelChapters').all()
+
+    if (!isCurrent()) return
+
+    bookmarks.value = rows.map((bookmark) => {
+      const book = books.find(
+          item =>
+              item.stem ===
+              `novels/${bookmark.book_slug}/index`
+      )
+
+      const chapter = chapters.find(
+          item =>
+              item.stem ===
+              `novels/${bookmark.book_slug}/${bookmark.chapter_slug}`
+      )
+
+      return {
+        ...bookmark,
+        bookTitle: book?.title ?? bookmark.book_slug,
+        chapterTitle:
+            chapter?.title ?? bookmark.chapter_slug,
+      }
+    })
+  } catch (error) {
+    if (!isCurrent()) return
+
+    console.error('讀取閱讀書籤時發生錯誤:', error)
+    bookmarksError.value = '讀取閱讀書籤時發生錯誤'
+  } finally {
+    if (isCurrent()) {
+      bookmarksLoading.value = false
+    }
+  }
+}
+
+async function removeBookmark(bookmark: BookmarkView) {
+  if (deletingBookmarkId.value) {
+    return
+  }
+
+  const userId = user.value?.id
+
+  if (!userId) {
+    return
+  }
+
+  const confirmed = window.confirm(
+      `確定要刪除這個書籤嗎？\n\n`
+      + `${bookmark.bookTitle}／${bookmark.chapterTitle}（${bookmark.progress}%）\n\n`
+      + `只會刪除書籤，不影響閱讀進度與購買紀錄。`
+  )
+
+  if (!confirmed) {
+    return
+  }
+
+  deletingBookmarkId.value = bookmark.id
+  bookmarksError.value = ''
+
+  try {
+    const success = await deleteBookmark(bookmark.id, userId)
+
+    // 刪除期間切換帳號就不要再動畫面。
+    if (user.value?.id !== userId) return
+
+    if (!success) {
+      bookmarksError.value = '刪除書籤失敗，請稍後再試。'
+      return
+    }
+
+    // 直接從列表移除，不需要重新查詢。
+    bookmarks.value = bookmarks.value.filter(
+        item => item.id !== bookmark.id
+    )
+  } finally {
+    if (user.value?.id === userId) {
+      deletingBookmarkId.value = ''
+    }
+  }
 }
 
 async function loadChapterAccess() {
@@ -1003,6 +1132,13 @@ onBeforeUnmount(() => {
 watch(
     () => user.value?.id,
     () => {
+      // 帳號改變時立即清除上一個帳號的書籤畫面。
+      bookmarksRequestId += 1
+      bookmarks.value = []
+      bookmarksLoading.value = false
+      bookmarksError.value = ''
+      deletingBookmarkId.value = ''
+
       // 帳號改變時立即清除上一個帳號的訂單畫面。
       ordersRequestId += 1
       orders.value = []
@@ -1030,8 +1166,19 @@ watch(
     { immediate: true },
 )
 
+watch(
+    [initialized, () => user.value?.id],
+    () => {
+      if (import.meta.client && initialized.value) {
+        void loadBookmarks()
+      }
+    },
+    { immediate: true },
+)
+
 onBeforeUnmount(() => {
   ordersRequestId += 1
+  bookmarksRequestId += 1
 })
 
 </script>
@@ -1151,6 +1298,88 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </NuxtLink>
+        </div>
+      </section>
+
+      <section class="bookmarks-section">
+        <h2>閱讀書籤</h2>
+
+        <p v-if="bookmarksLoading">
+          讀取中...
+        </p>
+
+        <p
+            v-else-if="bookmarksError"
+            class="error-message"
+            role="alert"
+        >
+          {{ bookmarksError }}
+        </p>
+
+        <p
+            v-else-if="bookmarks.length === 0"
+            class="empty-message"
+        >
+          目前還沒有書籤。閱讀章節時可以按右下角的「＋ 加入書籤」記錄位置。
+        </p>
+
+        <div
+            v-else
+            class="bookmark-list"
+        >
+          <article
+              v-for="bookmark in bookmarks"
+              :key="bookmark.id"
+              class="bookmark-card"
+          >
+            <div class="bookmark-body">
+              <strong>
+                {{ bookmark.bookTitle }}
+              </strong>
+
+              <p class="bookmark-chapter">
+                {{ bookmark.chapterTitle }}
+                <span class="bookmark-progress">
+                  {{ bookmark.progress }}%
+                </span>
+              </p>
+
+              <p
+                  v-if="bookmark.note"
+                  class="bookmark-note"
+              >
+                {{ bookmark.note }}
+              </p>
+
+              <p class="bookmark-date">
+                {{ formatOrderDate(bookmark.created_at) }}
+              </p>
+            </div>
+
+            <div class="bookmark-actions">
+              <NuxtLink
+                  :to="{
+                    path: `/novels/${encodeURIComponent(bookmark.book_slug)}/${encodeURIComponent(bookmark.chapter_slug)}`,
+                    query: { bookmark: String(bookmark.progress) },
+                  }"
+              >
+                前往書籤
+              </NuxtLink>
+
+              <button
+                  type="button"
+                  class="bookmark-delete-button"
+                  :disabled="Boolean(deletingBookmarkId)"
+                  @click="removeBookmark(bookmark)"
+              >
+                {{
+                  deletingBookmarkId === bookmark.id
+                      ? '刪除中…'
+                      : '刪除'
+                }}
+              </button>
+            </div>
+          </article>
         </div>
       </section>
 
@@ -1792,6 +2021,91 @@ onBeforeUnmount(() => {
   font-size: 13px;
   color: #a4262c;
   overflow-wrap: anywhere;
+}
+
+.bookmark-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bookmark-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 16px;
+  padding: 16px;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+}
+
+.bookmark-body {
+  min-width: 0;
+  flex: 1 1 240px;
+}
+
+.bookmark-chapter {
+  margin: 4px 0 0;
+}
+
+.bookmark-progress {
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e8eff7;
+  color: #245a91;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.bookmark-note {
+  margin: 8px 0 0;
+  padding-left: 10px;
+  border-left: 3px solid #ddd;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.bookmark-date {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #666;
+}
+
+.bookmark-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.bookmark-actions a,
+.bookmark-delete-button {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 6px 12px;
+  border: 1px solid #0d6efd;
+  border-radius: 6px;
+  background: transparent;
+  color: #0d6efd;
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 1.5;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.bookmark-delete-button {
+  border-color: #a4262c;
+  color: #a4262c;
+}
+
+.bookmark-delete-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 .order-filters {

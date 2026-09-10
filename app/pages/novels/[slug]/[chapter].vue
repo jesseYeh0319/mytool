@@ -20,6 +20,25 @@ const {
 
 const slug = route.params.slug as string
 const chapterSlug = route.params.chapter as string
+
+/*
+ * 從網址帶入的書籤位置。
+ *
+ * 在 setup 階段就固定下來，
+ * 之後把 query 從網址移除也不影響這個值。
+ */
+const bookmarkTarget = (() => {
+  const raw = route.query.bookmark
+
+  if (
+      typeof raw !== 'string' ||
+      !/^(?:100|[1-9][0-9]?|0)$/.test(raw)
+  ) {
+    return null
+  }
+
+  return Number(raw)
+})()
 const paymentAvailable = import.meta.dev
 const purchaseConsent = ref(false)
 const orderCreating = ref(false)
@@ -659,22 +678,26 @@ function scheduleProgressUpdate() {
  * 正文渲染完成後，恢復目前章節上次閱讀的位置
  */
 async function restoreReadingProgress() {
+  // 付費權限檢查維持不變，書籤不會繞過它。
   if (!canReadChapter.value) {
     return
   }
 
   let savedProgress: SavedReadingProgress | null = null
 
-  try {
-    const savedValue =
-        localStorage.getItem(CHAPTER_PROGRESS_KEY) ??
-        localStorage.getItem(BOOK_PROGRESS_KEY)
+  // 有書籤時本次不讀 localStorage，避免被閱讀進度覆蓋。
+  if (bookmarkTarget === null) {
+    try {
+      const savedValue =
+          localStorage.getItem(CHAPTER_PROGRESS_KEY) ??
+          localStorage.getItem(BOOK_PROGRESS_KEY)
 
-    if (savedValue) {
-      savedProgress = JSON.parse(savedValue) as SavedReadingProgress
+      if (savedValue) {
+        savedProgress = JSON.parse(savedValue) as SavedReadingProgress
+      }
+    } catch {
+      savedProgress = null
     }
-  } catch {
-    savedProgress = null
   }
 
   await nextTick()
@@ -689,26 +712,49 @@ async function restoreReadingProgress() {
     })
   })
 
-  if (
-      !novelContent.value ||
-      savedProgress?.chapter !== chapterSlug ||
-      !Number.isFinite(savedProgress.progress)
-  ) {
+  if (!novelContent.value) {
     return
   }
 
-  // 舊版只有每本小說一筆資料；讀到後順便遷移成本章資料。
-  if (!localStorage.getItem(CHAPTER_PROGRESS_KEY)) {
-    localStorage.setItem(
-        CHAPTER_PROGRESS_KEY,
-        JSON.stringify(savedProgress)
+  let progress: number
+
+  if (bookmarkTarget !== null) {
+    progress = bookmarkTarget
+
+    /*
+     * 用過就把 query 從網址移除，
+     * 之後重新整理才會回到一般的閱讀進度。
+     *
+     * 用 history.replaceState 而不是 navigateTo，
+     * 避免觸發 onBeforeRouteUpdate 的進度同步。
+     */
+    window.history.replaceState(
+        window.history.state,
+        '',
+        route.path,
+    )
+  } else {
+    if (
+        savedProgress?.chapter !== chapterSlug ||
+        !Number.isFinite(savedProgress.progress)
+    ) {
+      return
+    }
+
+    // 舊版只有每本小說一筆資料；讀到後順便遷移成本章資料。
+    if (!localStorage.getItem(CHAPTER_PROGRESS_KEY)) {
+      localStorage.setItem(
+          CHAPTER_PROGRESS_KEY,
+          JSON.stringify(savedProgress)
+      )
+    }
+
+    progress = Math.min(
+        Math.max(savedProgress.progress, 0),
+        100
     )
   }
 
-  const progress = Math.min(
-      Math.max(savedProgress.progress, 0),
-      100
-  )
   const contentRect = novelContent.value.getBoundingClientRect()
   const contentTop = window.scrollY + contentRect.top
   const readableDistance = Math.max(
@@ -813,6 +859,129 @@ function decreaseFontSize() {
     fontSize.value -= 1
   }
 }
+
+// 閱讀書籤
+const bookmarkOpen = ref(false)
+const bookmarkNote = ref('')
+const bookmarkProgress = ref(0)
+const bookmarkSaving = ref(false)
+const bookmarkMessage = ref('')
+
+let bookmarkMessageTimer: ReturnType<typeof setTimeout> | null = null
+
+onBeforeUnmount(() => {
+  if (bookmarkMessageTimer !== null) {
+    clearTimeout(bookmarkMessageTimer)
+  }
+})
+
+function openBookmark() {
+  bookmarkMessage.value = ''
+
+  if (
+      !user.value ||
+      !canReadChapter.value ||
+      !progressInitialized ||
+      !novelContent.value
+  ) {
+    bookmarkMessage.value = '閱讀內容尚未準備完成，請稍後再試。'
+    return
+  }
+
+  // 開啟輸入框前先記住位置，避免手機鍵盤改變視窗高度。
+  const rect = novelContent.value.getBoundingClientRect()
+  const readableDistance = Math.max(
+      rect.height - window.innerHeight,
+      1,
+  )
+
+  bookmarkProgress.value = Math.round(
+      Math.min(Math.max(-rect.top / readableDistance, 0), 1) * 100,
+  )
+
+  bookmarkNote.value = ''
+  bookmarkOpen.value = true
+}
+
+async function saveBookmark() {
+  if (bookmarkSaving.value) return
+
+  const userId = user.value?.id
+
+  if (!userId || !canReadChapter.value || !bookmarkOpen.value) {
+    return
+  }
+
+  const note = bookmarkNote.value.trim()
+
+  if (note.length > 200) {
+    bookmarkMessage.value = '備註最多 200 個字。'
+    return
+  }
+
+  bookmarkSaving.value = true
+  bookmarkMessage.value = ''
+
+  try {
+    const supabase = useSupabase()
+
+    const { error } = await supabase
+        .from('reading_bookmarks')
+        .insert({
+          user_id: userId,
+          book_slug: slug,
+          chapter_slug: chapterSlug,
+          progress: bookmarkProgress.value,
+          note,
+        })
+
+    // 若請求期間切換帳號，不顯示上一個帳號的結果。
+    if (user.value?.id !== userId) return
+
+    if (error) {
+      if (error.code === '23505') {
+        bookmarkMessage.value = '這個閱讀位置已經有書籤了。'
+        return
+      }
+
+      throw error
+    }
+
+    bookmarkOpen.value = false
+    bookmarkNote.value = ''
+    bookmarkMessage.value = '書籤已儲存。'
+
+    if (bookmarkMessageTimer !== null) {
+      clearTimeout(bookmarkMessageTimer)
+    }
+
+    bookmarkMessageTimer = setTimeout(() => {
+      // 避免清掉後續操作產生的錯誤提示。
+      if (bookmarkMessage.value === '書籤已儲存。') {
+        bookmarkMessage.value = ''
+      }
+
+      bookmarkMessageTimer = null
+    }, 3000)
+  } catch (error) {
+    if (user.value?.id !== userId) return
+
+    console.error('儲存閱讀書籤失敗:', error)
+    bookmarkMessage.value = '儲存失敗，請稍後再試。'
+  } finally {
+    bookmarkSaving.value = false
+  }
+}
+
+watch(
+    [() => user.value?.id, canReadChapter],
+    () => {
+      bookmarkOpen.value = false
+      bookmarkNote.value = ''
+      bookmarkMessage.value = ''
+    },
+)
+
 </script>
 
 <template>
@@ -1122,6 +1291,73 @@ function decreaseFontSize() {
       </nav>
 
     </div>
+
+    <!-- 閱讀書籤：只提供給已登入且可閱讀本章的使用者 -->
+    <ClientOnly>
+      <aside
+          v-if="initialized && user && canReadChapter"
+          class="bookmark-tools"
+          aria-label="閱讀書籤"
+      >
+        <form
+            v-if="bookmarkOpen"
+            id="reading-bookmark-form"
+            class="bookmark-panel"
+            @submit.prevent="saveBookmark"
+        >
+          <strong>加入書籤：{{ bookmarkProgress }}%</strong>
+
+          <label for="reading-bookmark-note">
+            備註（選填）
+          </label>
+
+          <textarea
+              id="reading-bookmark-note"
+              v-model="bookmarkNote"
+              maxlength="200"
+              rows="3"
+              placeholder="例如：下次想重看的段落"
+              :disabled="bookmarkSaving"
+          />
+
+          <div class="bookmark-actions">
+            <button
+                type="button"
+                :disabled="bookmarkSaving"
+                @click="bookmarkOpen = false; bookmarkMessage = ''"
+            >
+              取消
+            </button>
+
+            <button
+                type="submit"
+                :disabled="bookmarkSaving"
+            >
+              {{ bookmarkSaving ? '儲存中…' : '儲存書籤' }}
+            </button>
+          </div>
+        </form>
+
+        <p
+            v-if="bookmarkMessage"
+            class="bookmark-message"
+            role="status"
+        >
+          {{ bookmarkMessage }}
+        </p>
+
+        <button
+            v-if="!bookmarkOpen"
+            type="button"
+            aria-controls="reading-bookmark-form"
+            :aria-expanded="bookmarkOpen"
+            :disabled="bookmarkSaving"
+            @click="openBookmark"
+        >
+          ＋ 加入書籤
+        </button>
+      </aside>
+    </ClientOnly>
   </article>
 </template>
 
@@ -1605,4 +1841,92 @@ function decreaseFontSize() {
     grid-row: 2;
   }
 }
+
+.bookmark-tools {
+  position: fixed;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 40;
+  width: min(320px, calc(100vw - 32px));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.bookmark-panel,
+.bookmark-message,
+.bookmark-tools button {
+  box-sizing: border-box;
+  background: #fff;
+  color: #292929;
+  border: 1px solid #bbb;
+  border-radius: 8px;
+}
+
+.bookmark-panel {
+  width: 100%;
+  padding: 16px;
+  max-height: 65dvh;
+  overflow-y: auto;
+  box-shadow: 0 4px 20px rgb(0 0 0 / 15%);
+}
+
+.bookmark-panel label {
+  display: block;
+  margin: 14px 0 6px;
+}
+
+.bookmark-panel textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px;
+  font: inherit;
+  font-size: 16px;
+  background: transparent;
+  color: inherit;
+  border: 1px solid #999;
+  border-radius: 6px;
+  resize: vertical;
+}
+
+.bookmark-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.bookmark-tools button {
+  padding: 10px 14px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.bookmark-tools button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.bookmark-message {
+  margin: 0;
+  padding: 10px 14px;
+  overflow-wrap: anywhere;
+}
+
+.mode-sepia .bookmark-panel,
+.mode-sepia .bookmark-message,
+.mode-sepia .bookmark-tools button {
+  background: #f6f1e7;
+  color: #3b342c;
+}
+
+.mode-dark .bookmark-panel,
+.mode-dark .bookmark-message,
+.mode-dark .bookmark-tools button {
+  background: #292929;
+  color: #d8d8d8;
+  border-color: #666;
+}
+
 </style>
