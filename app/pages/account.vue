@@ -52,6 +52,133 @@ const route = useRoute()
 const paymentMessage = ref('')
 const paymentReadPath = ref('')
 const paymentChecking = ref(false)
+const paymentRetry = ref(0)
+const providerChecking = ref(false)
+let providerRequestId = 0
+let stopPaymentPolling: (() => void) | undefined
+const openingPaymentCheck = ref(false)
+
+async function retryPaymentCheck() {
+  if (
+      paymentChecking.value ||
+      providerChecking.value ||
+      !paymentOrderNo.value ||
+      !user.value
+  ) {
+    return
+  }
+
+  const requestId = ++providerRequestId
+  const orderNo = paymentOrderNo.value
+  const userId = user.value.id
+
+  const isCurrent = () =>
+      requestId === providerRequestId &&
+      paymentOrderNo.value === orderNo &&
+      user.value?.id === userId
+
+  providerChecking.value = true
+  paymentMessage.value = '正在向藍新確認付款結果…'
+
+  try {
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.getSession()
+
+    if (!isCurrent()) return
+
+    if (error || !session) {
+      paymentMessage.value = '登入已失效，請重新登入後確認。'
+      return
+    }
+
+    const result = await $fetch<{
+      status: string
+      message: string
+    }>('/api/payments/verify', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: { orderNo },
+      timeout: 20000,
+      retry: 0,
+    })
+
+    if (!isCurrent()) return
+
+    if (result.status === 'paid') {
+      // API 已確認並同步付款。
+      // 再由既有流程讀取權限、更新列表與閱讀入口。
+      paymentRetry.value += 1
+    } else {
+      paymentMessage.value = result.message
+    }
+  } catch (error: unknown) {
+    if (!isCurrent()) return
+
+    const statusCode =
+        error &&
+        typeof error === 'object' &&
+        'statusCode' in error
+            ? error.statusCode
+            : undefined
+
+    paymentMessage.value =
+        statusCode === 429
+            ? '剛剛已查詢過，請稍候最多 30 秒再確認。'
+            : '目前無法完成藍新查詢或訂單同步，請稍後再試。若已付款，請勿重複付款。'
+  } finally {
+    if (isCurrent()) {
+      providerChecking.value = false
+    }
+  }
+}
+
+async function confirmOrderPayment(orderNo: string) {
+  if (
+      openingPaymentCheck.value ||
+      providerChecking.value ||
+      !user.value
+  ) {
+    return
+  }
+
+  openingPaymentCheck.value = true
+  const userId = user.value.id
+
+  try {
+    await navigateTo({
+      path: '/account',
+      query: {
+        ...route.query,
+        paymentOrder: orderNo,
+      },
+    })
+
+    // 等待網址變更觸發的 watcher 完成初始化。
+    await nextTick()
+
+    if (
+        route.path !== '/account' ||
+        paymentOrderNo.value !== orderNo ||
+        user.value?.id !== userId
+    ) {
+      return
+    }
+
+    // 手動點擊時，停止等待 Supabase 的自動查詢，
+    // 直接向藍新確認。
+    stopPaymentPolling?.()
+    paymentChecking.value = false
+    paymentReadPath.value = ''
+
+    await retryPaymentCheck()
+  } finally {
+    openingPaymentCheck.value = false
+  }
+}
 
 const paymentOrderNo = computed(() => {
   const value = route.query.paymentOrder
@@ -411,8 +538,15 @@ watch(
 )
 
 watch(
-    [initialized, () => user.value?.id, paymentOrderNo],
+    [
+      initialized,
+      () => user.value?.id,
+      paymentOrderNo,
+      paymentRetry,
+    ],
     ([ready, userId, orderNo], _, onCleanup) => {
+      providerRequestId += 1
+      providerChecking.value = false
       paymentMessage.value = ''
       paymentReadPath.value = ''
       paymentChecking.value = false
@@ -433,10 +567,20 @@ watch(
       const controller = new AbortController()
 
       // 離開頁面、登出或切換訂單時停止查詢。
-      onCleanup(() => {
+      const stopPolling = () => {
         stopped = true
         controller.abort()
         clearTimeout(timer)
+      }
+
+      stopPaymentPolling = stopPolling
+
+      onCleanup(() => {
+        stopPolling()
+
+        if (stopPaymentPolling === stopPolling) {
+          stopPaymentPolling = undefined
+        }
       })
 
       paymentChecking.value = true
@@ -542,6 +686,11 @@ watch(
     },
     { immediate: true },
 )
+
+onBeforeUnmount(() => {
+  providerRequestId += 1
+})
+
 </script>
 
 <template>
@@ -580,9 +729,25 @@ watch(
           class="payment-feedback"
           role="status"
           aria-live="polite"
-          :aria-busy="paymentChecking"
+          :aria-busy="paymentChecking || providerChecking"
       >
         <p>{{ paymentMessage }}</p>
+
+        <button
+            v-if="paymentOrderNo && !paymentReadPath"
+            type="button"
+            class="payment-retry-button"
+            :disabled="paymentChecking || providerChecking"
+            @click="retryPaymentCheck"
+        >
+          {{
+            providerChecking
+                ? '向藍新查詢中…'
+                : paymentChecking
+                    ? '確認中…'
+                    : '重新確認'
+          }}
+        </button>
 
         <NuxtLink
             v-if="paymentReadPath"
@@ -721,6 +886,39 @@ watch(
               <p>
                 {{ order.bookTitle }}／{{ order.chapterTitle }}
               </p>
+
+              <div
+                  v-if="order.status === 'pending'"
+                  class="order-actions"
+              >
+                <NuxtLink
+                    :to="`/novels/${encodeURIComponent(order.book_slug)}/${encodeURIComponent(order.chapter_slug)}`"
+                >
+                  前往章節
+                </NuxtLink>
+
+                <button
+                    type="button"
+                    class="order-check-button"
+                    :disabled="openingPaymentCheck || providerChecking"
+                    @click="confirmOrderPayment(order.order_no)"
+                >
+                  {{
+                    (openingPaymentCheck || providerChecking) &&
+                    paymentOrderNo === order.order_no
+                        ? '向藍新查詢中…'
+                        : '確認付款狀態'
+                  }}
+                </button>
+              </div>
+
+              <p
+                  v-if="order.status === 'pending'"
+                  class="order-payment-hint"
+              >
+                若已完成付款，請先確認付款狀態，勿重複付款。
+              </p>
+
             </div>
 
             <!-- 金額與狀態 -->
@@ -1014,4 +1212,54 @@ watch(
 .payment-feedback p {
   margin: 0 0 8px;
 }
+
+.order-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 12px;
+}
+
+.order-actions a {
+  color: #245a91;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.order-card .order-payment-hint {
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.payment-retry-button {
+  padding: 8px 14px;
+  border: 1px solid #aaa;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.payment-retry-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.order-check-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #245a91;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.order-check-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 </style>
