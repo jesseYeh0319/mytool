@@ -2035,6 +2035,12 @@ onBeforeUnmount(() => {
 .bookmark-body {
   min-width: 0;
   flex: 1 1 240px;
+
+  /*
+   * overflow-wrap 會繼承，
+   * 書名、章節名與備註裡的長串英數字都能斷行。
+   */
+  overflow-wrap: anywhere;
 }
 
 .bookmark-chapter {
@@ -2273,9 +2279,23 @@ onBeforeUnmount(() => {
     margin: 6px 0 0;
   }
 
+  /*
+   * 直排時不能保留 flex-wrap: wrap：
+   * 多行 flex 容器會把子項拉到「最寬子項」的寬度，
+   * 一段不能斷行的長字就會讓整張卡片的內容溢出。
+   */
   .bookmark-card {
     flex-direction: column;
+    flex-wrap: nowrap;
     align-items: stretch;
+  }
+
+  /*
+   * 桌機的 flex: 1 1 240px 指的是寬度；
+   * 直排後主軸變成垂直，240px 會變成高度，留下一大塊空白。
+   */
+  .bookmark-body {
+    flex: none;
   }
 
   .bookmark-actions a,

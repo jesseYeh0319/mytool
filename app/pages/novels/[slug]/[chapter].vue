@@ -1812,6 +1812,13 @@ watch(
   max-height: 65dvh;
   overflow-y: auto;
 
+  /*
+   * 直向 flex：高度不夠時由輸入框縮小，
+   * 「取消／儲存」固定留在面板底部看得到的位置。
+   */
+  display: flex;
+  flex-direction: column;
+
   /* 面板捲到底時不要接著捲動底下的正文。 */
   overscroll-behavior: contain;
 
@@ -1826,6 +1833,10 @@ watch(
 .bookmark-panel textarea {
   box-sizing: border-box;
   width: 100%;
+
+  /* 可以被壓縮，但至少保留一行可輸入的高度。 */
+  flex: 1 1 auto;
+  min-height: 44px;
   padding: 8px;
   font: inherit;
   font-size: 16px;
@@ -1841,6 +1852,9 @@ watch(
   justify-content: flex-end;
   gap: 8px;
   margin-top: 12px;
+
+  /* 按鈕列不參與壓縮，永遠完整顯示。 */
+  flex: none;
 }
 
 .bookmark-tools button {
