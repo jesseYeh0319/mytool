@@ -205,6 +205,12 @@ function switchMode(newMode: 'login' | 'register') {
           </button>
         </form>
 
+        <p v-if="mode === 'login'">
+          <NuxtLink to="/forgot-password">
+            忘記密碼？
+          </NuxtLink>
+        </p>
+
         <p
             v-if="message"
             class="message"
