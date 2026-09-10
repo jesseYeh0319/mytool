@@ -56,30 +56,32 @@ const orderFilterOptions: {
   { value: 'other', label: '其他狀態' },
 ]
 
-function matchesOrderFilter(
-    order: OrderView,
-    filter: OrderFilter,
-) {
-  if (filter === 'all') return true
+const ORDER_PAGE_SIZE = 10
+const orderPage = ref(1)
+const orderTotal = ref(0)
+const ordersLoading = ref(false)
+const ordersError = ref('')
 
-  if (filter === 'other') {
-    return order.status !== 'pending' &&
-        order.status !== 'paid'
-  }
+const orderCounts = ref<Record<OrderFilter, number>>({
+  all: 0,
+  pending: 0,
+  paid: 0,
+  other: 0,
+})
 
-  return order.status === filter
-}
-
-const filteredOrders = computed(() =>
-    orders.value.filter(order =>
-        matchesOrderFilter(order, orderFilter.value),
-    ),
+const orderPageCount = computed(() =>
+    Math.max(1, Math.ceil(orderTotal.value / ORDER_PAGE_SIZE)),
 )
 
+let ordersRequestId = 0
+
+function selectOrderFilter(filter: OrderFilter) {
+  orderFilter.value = filter
+  orderPage.value = 1
+}
+
 function orderCount(filter: OrderFilter) {
-  return orders.value.filter(order =>
-      matchesOrderFilter(order, filter),
-  ).length
+  return orderCounts.value[filter]
 }
 
 const {
@@ -324,17 +326,38 @@ async function loadChapterAccess() {
 }
 
 async function loadOrders() {
-  if (!user.value) {
-    orders.value = []
+  const requestId = ++ordersRequestId
+  const userId = user.value?.id
+  const page = orderPage.value
+  const filter = orderFilter.value
+
+  orders.value = []
+  ordersError.value = ''
+
+  if (!import.meta.client || !userId) {
+    orderTotal.value = 0
+    orderCounts.value = {
+      all: 0,
+      pending: 0,
+      paid: 0,
+      other: 0,
+    }
+    ordersLoading.value = false
     return
   }
 
-  const {
-    data,
-    error,
-  } = await supabase
-      .from('orders')
-      .select(`
+  ordersLoading.value = true
+
+  const isCurrent = () =>
+      requestId === ordersRequestId &&
+      user.value?.id === userId &&
+      orderPage.value === page &&
+      orderFilter.value === filter
+
+  try {
+    let query = supabase
+        .from('orders')
+        .select(`
         id,
         order_no,
         book_slug,
@@ -344,43 +367,103 @@ async function loadOrders() {
         status,
         created_at,
         paid_at
-      `)
-      .order('created_at', {
-        ascending: false,
-      })
+      `, { count: 'exact' })
+        .eq('user_id', userId)
 
-  if (error) {
-    console.error('取得訂單紀錄失敗:', error)
-    orders.value = []
-    return
-  }
-
-  const books = await queryCollection('novelBooks').all()
-  const chapters = await queryCollection('novelChapters').all()
-
-  orders.value = ((data ?? []) as Order[]).map((order) => {
-    const book = books.find(
-        item =>
-            item.stem ===
-            `novels/${order.book_slug}/index`
-    )
-
-    const chapter = chapters.find(
-        item =>
-            item.stem ===
-            `novels/${order.book_slug}/${order.chapter_slug}`
-    )
-
-    return {
-      ...order,
-      bookTitle: book?.title ?? order.book_slug,
-      chapterTitle:
-          chapter?.title ?? order.chapter_slug,
-      statusLabel:
-          ORDER_STATUS_LABELS[order.status] ??
-          order.status,
+    if (filter === 'other') {
+      query = query.not('status', 'in', '(pending,paid)')
+    } else if (filter !== 'all') {
+      query = query.eq('status', filter)
     }
-  })
+
+    const from = (page - 1) * ORDER_PAGE_SIZE
+
+    // 計數請求只回傳筆數，不下載全部訂單內容。
+    const countQuery = () =>
+        supabase
+            .from('orders')
+            .select('id', { count: 'exact', head: true })
+            .eq('user_id', userId)
+
+    const [pageResult, allResult, pendingResult, paidResult] =
+        await Promise.all([
+          query
+              .order('created_at', { ascending: false })
+              .order('id', { ascending: false })
+              .range(from, from + ORDER_PAGE_SIZE - 1),
+
+          countQuery(),
+          countQuery().eq('status', 'pending'),
+          countQuery().eq('status', 'paid'),
+        ])
+
+    if (!isCurrent()) return
+
+    if (
+        pageResult.error ||
+        allResult.error ||
+        pendingResult.error ||
+        paidResult.error
+    ) {
+      throw new Error('Order query failed')
+    }
+
+    orderTotal.value = pageResult.count ?? 0
+
+    const all = allResult.count ?? 0
+    const pending = pendingResult.count ?? 0
+    const paid = paidResult.count ?? 0
+
+    orderCounts.value = {
+      all,
+      pending,
+      paid,
+      other: Math.max(0, all - pending - paid),
+    }
+
+    // 付款更新後，最後一頁可能變成空頁。
+    if (page > orderPageCount.value) {
+      orderPage.value = orderPageCount.value
+      return
+    }
+
+    const [books, chapters] = await Promise.all([
+      queryCollection('novelBooks').all(),
+      queryCollection('novelChapters').all(),
+    ])
+
+    if (!isCurrent()) return
+
+    orders.value = ((pageResult.data ?? []) as Order[])
+        .map((order) => {
+          const book = books.find(
+              item => item.stem === `novels/${order.book_slug}/index`,
+          )
+
+          const chapter = chapters.find(
+              item =>
+                  item.stem ===
+                  `novels/${order.book_slug}/${order.chapter_slug}`,
+          )
+
+          return {
+            ...order,
+            bookTitle: book?.title ?? order.book_slug,
+            chapterTitle: chapter?.title ?? order.chapter_slug,
+            statusLabel:
+                ORDER_STATUS_LABELS[order.status] ?? order.status,
+          }
+        })
+  } catch {
+    if (!isCurrent()) return
+
+    orders.value = []
+    ordersError.value = '無法讀取訂單，請稍後重試。'
+  } finally {
+    if (requestId === ordersRequestId) {
+      ordersLoading.value = false
+    }
+  }
 }
 
 async function loadRecentReadings() {
@@ -564,7 +647,6 @@ watch(
       }
 
       await loadChapterAccess()
-      await loadOrders()
 
       if (user.value) {
         await loadRecentReadings()
@@ -729,6 +811,40 @@ watch(
 
 onBeforeUnmount(() => {
   providerRequestId += 1
+})
+
+watch(
+    () => user.value?.id,
+    () => {
+      // 帳號改變時立即清除上一個帳號的訂單畫面。
+      ordersRequestId += 1
+      orders.value = []
+      orderPage.value = 1
+      orderTotal.value = 0
+      ordersLoading.value = false
+      ordersError.value = ''
+      orderCounts.value = {
+        all: 0,
+        pending: 0,
+        paid: 0,
+        other: 0,
+      }
+    },
+    { flush: 'sync' },
+)
+
+watch(
+    [initialized, () => user.value?.id, orderPage, orderFilter],
+    () => {
+      if (import.meta.client && initialized.value) {
+        void loadOrders()
+      }
+    },
+    { immediate: true },
+)
+
+onBeforeUnmount(() => {
+  ordersRequestId += 1
 })
 
 </script>
@@ -902,7 +1018,6 @@ onBeforeUnmount(() => {
         <h2>訂單紀錄</h2>
 
         <div
-            v-if="orders.length > 0"
             class="order-filters"
             role="group"
             aria-label="篩選訂單狀態"
@@ -912,19 +1027,29 @@ onBeforeUnmount(() => {
               :key="option.value"
               type="button"
               :aria-pressed="orderFilter === option.value"
-              @click="orderFilter = option.value"
+              :disabled="ordersLoading"
+              @click="selectOrderFilter(option.value)"
           >
             {{ option.label }}（{{ orderCount(option.value) }}）
           </button>
         </div>
 
+        <p v-if="ordersLoading" role="status">正在載入訂單…</p>
+
+        <div v-else-if="ordersError" role="alert">
+          <p>{{ ordersError }}</p>
+          <button type="button" class="order-check-button" @click="loadOrders()">
+            重新載入
+          </button>
+        </div>
+
         <p
-            v-if="filteredOrders.length === 0"
+            v-else-if="orders.length === 0"
             class="empty-message"
             role="status"
         >
           {{
-            orders.length === 0
+            orderCounts.all === 0
                 ? '目前還沒有訂單紀錄。'
                 : '目前沒有符合此狀態的訂單。'
           }}
@@ -935,7 +1060,7 @@ onBeforeUnmount(() => {
             class="order-list"
         >
           <article
-              v-for="order in filteredOrders"
+              v-for="order in orders"
               :key="order.id"
               class="order-card"
           >
@@ -1024,6 +1149,29 @@ onBeforeUnmount(() => {
             </div>
           </article>
         </div>
+        <nav
+            v-if="orderTotal > 0 && !ordersError"
+            class="order-pagination"
+            aria-label="訂單分頁"
+        >
+          <button
+              type="button"
+              :disabled="ordersLoading || orderPage <= 1"
+              @click="orderPage -= 1"
+          >
+            上一頁
+          </button>
+          <span role="status">
+            第 {{ orderPage }}／{{ orderPageCount }} 頁，共 {{ orderTotal }} 筆
+          </span>
+          <button
+              type="button"
+              :disabled="ordersLoading || orderPage >= orderPageCount"
+              @click="orderPage += 1"
+          >
+            下一頁
+          </button>
+        </nav>
       </section>
     </div>
   </div>
@@ -1331,7 +1479,8 @@ onBeforeUnmount(() => {
   margin-bottom: 16px;
 }
 
-.order-filters button {
+.order-filters button,
+.order-pagination button {
   padding: 8px 12px;
   border: 1px solid #ccc;
   border-radius: 6px;
@@ -1347,9 +1496,25 @@ onBeforeUnmount(() => {
   color: #fff;
 }
 
-.order-filters button:focus-visible {
+.order-filters button:focus-visible,
+.order-pagination button:focus-visible {
   outline: 2px solid #245a91;
   outline-offset: 3px;
+}
+
+.order-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.order-filters button:disabled,
+.order-pagination button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 </style>
