@@ -1116,6 +1116,20 @@ watch(
         <p>
           請重新整理頁面後再試一次
         </p>
+
+        <NuxtLink
+            :to="{
+              path: '/support',
+              query: {
+                category: 'paid_unreadable',
+                book: slug,
+                chapter: chapterSlug,
+              },
+            }"
+            class="report-link"
+        >
+          重新整理仍無法閱讀？回報問題
+        </NuxtLink>
       </section>
 
       <!-- 付費章節鎖定提示 -->
@@ -1290,6 +1304,23 @@ watch(
         </div>
       </nav>
 
+      <!-- 問題回報：錯字、缺漏與閱讀異常都從這裡回報 -->
+      <p class="report-entry">
+        <NuxtLink
+            :to="{
+              path: '/support',
+              query: {
+                category: 'content',
+                book: slug,
+                chapter: chapterSlug,
+              },
+            }"
+            class="report-link"
+        >
+          回報問題
+        </NuxtLink>
+      </p>
+
     </div>
 
     <!-- 閱讀書籤：只提供給已登入且可閱讀本章的使用者 -->
@@ -1400,6 +1431,31 @@ watch(
 
   color: inherit;
   font-weight: 700;
+}
+
+.report-entry {
+  margin: 24px 0 0;
+
+  text-align: center;
+}
+
+/* color: inherit 讓淺色、護眼、深色三種閱讀模式都看得清楚。 */
+.report-link {
+  display: inline-flex;
+  align-items: center;
+
+  min-height: 44px;
+
+  color: inherit;
+  font-size: 14px;
+
+  opacity: 0.75;
+
+  text-underline-offset: 3px;
+}
+
+.report-link:hover {
+  opacity: 1;
 }
 
 .reader-wrapper {

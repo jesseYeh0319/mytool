@@ -1431,7 +1431,16 @@ onBeforeUnmount(() => {
         </div>
       </section>
       <section class="orders-section">
-        <h2>訂單紀錄</h2>
+        <div class="orders-heading">
+          <h2>訂單紀錄</h2>
+
+          <NuxtLink
+              to="/support"
+              class="support-link"
+          >
+            訂單問題／聯絡客服
+          </NuxtLink>
+        </div>
 
         <p
             class="order-copy-message"
@@ -1534,6 +1543,19 @@ onBeforeUnmount(() => {
                     {{ order.paid_at ? formatOrderDate(order.paid_at) : '尚無付款紀錄' }}
                   </dd>
                 </dl>
+
+                <NuxtLink
+                    :to="{
+                      path: '/support',
+                      query: {
+                        category: order.status === 'paid' ? 'paid_unreadable' : 'other',
+                        order: order.order_no,
+                      },
+                    }"
+                    class="support-link"
+                >
+                  這筆訂單有問題？回報給客服
+                </NuxtLink>
               </details>
 
               <div
@@ -2207,6 +2229,26 @@ onBeforeUnmount(() => {
 
 .order-copy-message:empty {
   margin: 0;
+}
+
+.orders-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+}
+
+.support-link {
+  display: inline-flex;
+  align-items: center;
+
+  min-height: 44px;
+
+  color: #245a91;
+  font-size: 14px;
+
+  text-underline-offset: 3px;
 }
 
 /* 斷點與網站其他頁面一致，改用 768px。 */
