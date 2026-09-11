@@ -9,6 +9,9 @@ const loading = ref(false)
 const done = ref(false)
 const errorMessage = ref('')
 
+// 其他裝置上的登入是否已撤銷。
+const othersRevoked = ref(false)
+
 const recoveryUserId = useState<string | null>(
     'password-recovery-user-id',
     () => null,
@@ -141,6 +144,27 @@ async function savePassword() {
     password.value = ''
     confirmPassword.value = ''
     recoveryUserId.value = null
+
+    /*
+     * 密碼一更新就撤銷其他裝置的登入。
+     * 不能等使用者按「返回登入」，關掉分頁就不會執行了。
+     *
+     * 用 'others' 而不是 'global'：
+     * 撤銷失敗時 SDK 不會清掉本機登入，
+     * 「返回登入」才能用同一個登入狀態重試。
+     */
+    const { error: revokeError } = await supabase.auth.signOut({
+      scope: 'others',
+    })
+
+    if (pageDisposed) return
+
+    if (revokeError) {
+      errorMessage.value =
+          '密碼已更新，但其他裝置的登入尚未撤銷，請按「返回登入」重試。'
+    } else {
+      othersRevoked.value = true
+    }
   } catch {
     if (pageDisposed) return
     errorMessage.value = '連線失敗，請確認網路後再試。'
@@ -156,6 +180,21 @@ async function returnToLogin() {
   errorMessage.value = ''
 
   try {
+    // 更新密碼時撤銷失敗的話，在這裡重試。
+    if (!othersRevoked.value) {
+      const { error: revokeError } = await supabase.auth.signOut({
+        scope: 'others',
+      })
+
+      if (revokeError) {
+        errorMessage.value =
+            '其他裝置的登入仍未撤銷，請稍後再按一次返回登入。'
+        return
+      }
+
+      othersRevoked.value = true
+    }
+
     const { error } = await supabase.auth.signOut({
       scope: 'local',
     })
@@ -180,7 +219,10 @@ async function returnToLogin() {
     <h1>重設密碼</h1>
 
     <template v-if="done">
-      <p role="status">密碼已更新，請使用新密碼重新登入。</p>
+      <p role="status">
+        密碼已更新{{ othersRevoked ? '，其他裝置上的登入也已登出' : '' }}。
+        請使用新密碼重新登入。
+      </p>
       <button
           type="button"
           :disabled="loading"
