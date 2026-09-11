@@ -1433,6 +1433,7 @@ onBeforeUnmount(() => {
       <section class="orders-section">
         <div class="orders-heading">
           <h2>訂單紀錄</h2>
+          <NuxtLink to="/my-reports" class="support-link">我的回報／客服回覆</NuxtLink>
 
           <NuxtLink
               to="/support"

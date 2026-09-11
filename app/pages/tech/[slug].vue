@@ -3,6 +3,10 @@ const route = useRoute()
 
 const slug = route.params.slug as string
 
+definePageMeta({
+  key: route => route.path,
+})
+
 /* =========================
    Current Article
 ========================= */
@@ -525,6 +529,10 @@ watch(
       </aside>
     </div>
 
+    <TechComments
+        :key="slug"
+        :article-slug="slug"
+    />
     <!-- =========================
          Related Articles
     ========================== -->

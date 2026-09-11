@@ -78,9 +78,14 @@ export default defineNuxtConfig({
         newebpayApiUrl:
             'https://ccore.newebpay.com/MPG/mpg_gateway',
 
+        turnstileSecretKey: '',
+        turnstileAllowedHostnames: '',
+        commentRateLimitSecret: '',
+
         public: {
             supabaseUrl: '',
             supabaseKey: '',
+            turnstileSiteKey: '',
         },
     },
 

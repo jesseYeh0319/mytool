@@ -365,6 +365,7 @@ async function copyReportNo() {
 <template>
   <section class="support-page">
     <h1>問題回報</h1>
+    <p><NuxtLink to="/my-reports">我的回報／查看處理進度</NuxtLink></p>
 
     <p v-if="!initialized">
       讀取會員資料中…
@@ -424,10 +425,13 @@ async function copyReportNo() {
       </p>
 
       <p class="support-hint">
-        我們會寄信到 {{ contactEmail }} 回覆，聯絡時請附上回報編號。
+        請至「我的回報」查看客服回覆與處理結果，聯絡時請附上回報編號。
       </p>
 
       <div class="support-actions">
+        <NuxtLink :to="{ path: '/my-reports', query: { report: result.reportNo } }">
+          查看這筆回報
+        </NuxtLink>
         <NuxtLink to="/account">
           回會員中心
         </NuxtLink>
