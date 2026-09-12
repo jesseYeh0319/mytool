@@ -149,6 +149,8 @@ export default defineEventHandler(async (event) => {
         success: boolean
         hostname?: string
         action?: string
+        'error-codes'?: string[]
+        challenge_ts?: string
     }
 
     try {
@@ -168,6 +170,16 @@ export default defineEventHandler(async (event) => {
     } catch {
         commentError(503, '驗證服務暫時無法連線，請重新驗證後再試。')
     }
+
+    // 暫時的除錯用 log，確認完問題原因後記得刪掉這段。
+    console.log('[tech-comments] turnstile 驗證結果', {
+        success: verification.success,
+        action: verification.action,
+        hostname: verification.hostname,
+        errorCodes: verification['error-codes'],
+        challengeTs: verification.challenge_ts,
+        allowedHostnames,
+    })
 
     if (
         !verification.success
