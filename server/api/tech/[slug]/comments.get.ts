@@ -34,8 +34,12 @@ export default defineEventHandler(async (event) => {
         .range(start, start + pageSize)
 
     if (error) {
+        // 暫時的除錯用 log，確認完問題原因後記得刪掉這段。
         console.error('[tech-comments] 讀取失敗', {
             code: error.code,
+            message: error.message,
+            details: (error as { details?: string }).details,
+            hint: (error as { hint?: string }).hint,
         })
 
         commentError(500, '目前無法讀取留言，請稍後再試。')

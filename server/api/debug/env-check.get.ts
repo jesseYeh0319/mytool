@@ -30,6 +30,9 @@ export default defineEventHandler((event) => {
         },
 
         server: {
+            supabaseSecretKeySet: Boolean(config.supabaseSecretKey),
+            supabaseSecretKeyLength: config.supabaseSecretKey?.length ?? 0,
+
             turnstileSecretKeySet: Boolean(config.turnstileSecretKey),
             turnstileSecretKeyLength: config.turnstileSecretKey?.length ?? 0,
 
